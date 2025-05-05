@@ -1,0 +1,282 @@
+[
+  {
+    "busNumber": 1,
+    "name": "1호차 (김포시청-풍무동)",
+    "times": [
+      {
+        "isMorning": true,
+        "routeData": [
+          {
+            "name": "김포시청",
+            "latitude": 37.6150065,
+            "longitude": 126.7155952,
+            "time": "07:30"
+          },
+          {
+            "name": "사우역",
+            "latitude": 37.6212326,
+            "longitude": 126.7227162,
+            "time": "07:42"
+          },
+          {
+            "name": "풍무사거리",
+            "latitude": 37.6078072,
+            "longitude": 126.7240045,
+            "time": "07:55"
+          },
+          {
+            "name": "풍무한화아파트",
+            "latitude": 37.6054173,
+            "longitude": 126.7332647,
+            "time": "08:05"
+          },
+          {
+            "name": "고촌읍사무소",
+            "latitude": 37.5977754,
+            "longitude": 126.7747748,
+            "time": "08:20"
+          }
+        ]
+      },
+      {
+        "isMorning": false,
+        "routeData": [
+          {
+            "name": "고촌읍사무소",
+            "latitude": 37.5977754,
+            "longitude": 126.7747748,
+            "time": "18:00"
+          },
+          {
+            "name": "풍무한화아파트",
+            "latitude": 37.6054173,
+            "longitude": 126.7332647,
+            "time": "18:15"
+          },
+          {
+            "name": "풍무사거리",
+            "latitude": 37.6078072,
+            "longitude": 126.7240045,
+            "time": "18:25"
+          },
+          {
+            "name": "사우역",
+            "latitude": 37.6212326,
+            "longitude": 126.7227162,
+            "time": "18:40"
+          },
+          {
+            "name": "김포시청",
+            "latitude": 37.6150065,
+            "longitude": 126.7155952,
+            "time": "18:55"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "busNumber": 2,
+    "name": "2호차 (구래동-장기동)",
+    "times": [
+      {
+        "isMorning": true,
+        "routeData": [
+          {
+            "name": "구래역",
+            "latitude": 37.6419118,
+            "longitude": 126.6267853,
+            "time": "07:20"
+          },
+          {
+            "name": "구래동 롯데마트",
+            "latitude": 37.6448219,
+            "longitude": 126.6238358,
+            "time": "07:30"
+          },
+          {
+            "name": "김포한강신도시",
+            "latitude": 37.6467382,
+            "longitude": 126.6294984,
+            "time": "07:45"
+          },
+          {
+            "name": "장기동주민센터",
+            "latitude": 37.6459255,
+            "longitude": 126.6698723,
+            "time": "08:00"
+          },
+          {
+            "name": "김포대학교",
+            "latitude": 37.6195851,
+            "longitude": 126.6732297,
+            "time": "08:15"
+          }
+        ]
+      },
+      {
+        "isMorning": false,
+        "routeData": [
+          {
+            "name": "김포대학교",
+            "latitude": 37.6195851,
+            "longitude": 126.6732297,
+            "time": "17:30"
+          },
+          {
+            "name": "장기동주민센터",
+            "latitude": 37.6459255,
+            "longitude": 126.6698723,
+            "time": "17:50"
+          },
+          {
+            "name": "김포한강신도시",
+            "latitude": 37.6467382,
+            "longitude": 126.6294984,
+            "time": "18:10"
+          },
+          {
+            "name": "구래동 롯데마트",
+            "latitude": 37.6448219,
+            "longitude": 126.6238358,
+            "time": "18:25"
+          },
+          {
+            "name": "구래역",
+            "latitude": 37.6419118,
+            "longitude": 126.6267853,
+            "time": "18:35"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "busNumber": 3,
+    "name": "3호차 (통진-양촌)",
+    "times": [
+      {
+        "isMorning": true,
+        "routeData": [
+          {
+            "name": "통진읍사무소",
+            "latitude": 37.6883945,
+            "longitude": 126.5944399,
+            "time": "07:00"
+          },
+          {
+            "name": "마송중심상가",
+            "latitude": 37.6954435,
+            "longitude": 126.6208941,
+            "time": "07:15"
+          },
+          {
+            "name": "양촌읍사무소",
+            "latitude": 37.6651641,
+            "longitude": 126.6194241,
+            "time": "07:35"
+          },
+          {
+            "name": "김포공항",
+            "latitude": 37.5638144,
+            "longitude": 126.8022685,
+            "time": "08:10"
+          }
+        ]
+      },
+      {
+        "isMorning": false,
+        "routeData": [
+          {
+            "name": "김포공항",
+            "latitude": 37.5638144,
+            "longitude": 126.8022685,
+            "time": "17:45"
+          },
+          {
+            "name": "양촌읍사무소",
+            "latitude": 37.6651641,
+            "longitude": 126.6194241,
+            "time": "18:20"
+          },
+          {
+            "name": "마송중심상가",
+            "latitude": 37.6954435,
+            "longitude": 126.6208941,
+            "time": "18:40"
+          },
+          {
+            "name": "통진읍사무소",
+            "latitude": 37.6883945,
+            "longitude": 126.5944399,
+            "time": "19:00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "busNumber": 4,
+    "name": "4호차 (대곶-하성)",
+    "times": [
+      {
+        "isMorning": true,
+        "routeData": [
+          {
+            "name": "대곶면사무소",
+            "latitude": 37.6671734,
+            "longitude": 126.5631084,
+            "time": "07:10"
+          },
+          {
+            "name": "대명항",
+            "latitude": 37.6334271,
+            "longitude": 126.5273691,
+            "time": "07:25"
+          },
+          {
+            "name": "하성면사무소",
+            "latitude": 37.7105957,
+            "longitude": 126.6142416,
+            "time": "07:50"
+          },
+          {
+            "name": "김포시외버스터미널",
+            "latitude": 37.6153383,
+            "longitude": 126.7191217,
+            "time": "08:20"
+          }
+        ]
+      },
+      {
+        "isMorning": false,
+        "routeData": [
+          {
+            "name": "김포시외버스터미널",
+            "latitude": 37.6153383,
+            "longitude": 126.7191217,
+            "time": "17:40"
+          },
+          {
+            "name": "하성면사무소",
+            "latitude": 37.7105957,
+            "longitude": 126.6142416,
+            "time": "18:10"
+          },
+          {
+            "name": "대명항",
+            "latitude": 37.6334271,
+            "longitude": 126.5273691,
+            "time": "18:35"
+          },
+          {
+            "name": "대곶면사무소",
+            "latitude": 37.6671734,
+            "longitude": 126.5631084,
+            "time": "18:50"
+          }
+        ]
+      }
+    ]
+  }
+] 

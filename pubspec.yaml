@@ -1,6 +1,6 @@
 name: flutter_application_kimpoedu_shuttlebus_manager
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 version: 0.1.0
 
 environment:
@@ -9,6 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  path_provider: ^2.1.1
+  path: ^1.8.3
+  http: ^1.1.0
+  get: ^4.6.5
 
 dev_dependencies:
   flutter_test:
@@ -17,3 +21,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/config/ # 인증 설정 파일을 포함하도록 assets 등록
