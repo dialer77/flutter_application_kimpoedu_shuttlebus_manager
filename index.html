@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>네이버 지도</title>
+  <script type="text/javascript" src="https://openapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=7pvo13mp0n"></script>
+  <style>
+    html, body, #map {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    // 메시지 전송 함수
+    function sendMessage(data) {
+      try {
+        window.chrome.webview.postMessage(JSON.stringify(data));
+      } catch (e) {
+        console.error('메시지 전송 오류:', e);
+      }
+    }
+    
+    // 변수 선언
+    var map = null;
+    var markers = {};
+    var polylines = {};
+    
+    // 네이버 API 로드
+    function loadNaverApi() {
+      try {
+        // 지도 생성
+        map = new naver.maps.Map('map', {
+          center: new naver.maps.LatLng(37.5666805, 126.9784147),
+          zoom: 14,
+          mapTypeControl: true,
+          mapTypeControlOptions: {
+            style: naver.maps.MapTypeControlStyle.DROPDOWN
+          }
+        });
+        
+        // 지도 클릭 이벤트
+        naver.maps.Event.addListener(map, 'click', function(e) {
+          sendMessage({
+            event: 'mapClicked',
+            lat: e.coord.lat(),
+            lng: e.coord.lng()
+          });
+        });
+        
+        // 지도 초기화 완료 알림
+        sendMessage({ event: 'mapInitialized' });
+        
+        // URL 로그
+        logUrlInfo();
+      } catch (e) {
+        sendMessage({ 
+          event: 'initError', 
+          message: e.toString() 
+        });
+        console.error('지도 초기화 오류:', e);
+      }
+    }
+    
+    // 마커 추가
+    function addMarker(id, lat, lng, title, type) {
+      try {
+        // 마커 아이콘 설정
+        var icon = {
+          content: '<div style="background-color:MARKER_COLOR;width:12px;height:12px;border-radius:50%;"></div>',
+          size: new naver.maps.Size(12, 12),
+          anchor: new naver.maps.Point(6, 6)
+        };
+        
+        // 마커 타입에 따라 색상 변경
+        if (type === 'start') {
+          icon.content = icon.content.replace('MARKER_COLOR', '#00FF00');  // 시작점: 녹색
+        } else if (type === 'end') {
+          icon.content = icon.content.replace('MARKER_COLOR', '#FF0000');  // 끝점: 빨간색
+        } else {
+          icon.content = icon.content.replace('MARKER_COLOR', '#0000FF');  // 경유지: 파란색
+        }
+        
+        // 마커 생성
+        var marker = new naver.maps.Marker({
+          position: new naver.maps.LatLng(lat, lng),
+          map: map,
+          title: title,
+          icon: icon
+        });
+        
+        // 정보창 생성
+        var infoWindow = new naver.maps.InfoWindow({
+          content: '<div style="padding:10px;min-width:100px;text-align:center;">' + title + '</div>'
+        });
+        
+        // 마커 클릭 이벤트
+        naver.maps.Event.addListener(marker, 'click', function() {
+          if (infoWindow.getMap()) {
+            infoWindow.close();
+          } else {
+            infoWindow.open(map, marker);
+          }
+          
+          // 클릭 이벤트 전송
+          sendMessage({
+            event: 'markerClicked',
+            id: id,
+            lat: lat,
+            lng: lng,
+            title: title
+          });
+        });
+        
+        // 마커 저장
+        markers[id] = { marker: marker, infoWindow: infoWindow };
+      } catch (e) {
+        sendMessage({ 
+          event: 'error', 
+          message: 'addMarker 오류: ' + e.toString() 
+        });
+      }
+    }
+    
+    // 마커 제거
+    function removeMarker(id) {
+      if (markers[id]) {
+        markers[id].marker.setMap(null);
+        if (markers[id].infoWindow.getMap()) {
+          markers[id].infoWindow.close();
+        }
+        delete markers[id];
+      }
+    }
+    
+    // 모든 마커 제거
+    function clearMarkers() {
+      for (var id in markers) {
+        removeMarker(id);
+      }
+    }
+    
+    // 경로선 그리기
+    function drawRoute(routeId, points, color) {
+      // 기존 경로 제거
+      removeRoute(routeId);
+      
+      var path = [];
+      for (var i = 0; i < points.length; i++) {
+        path.push(new naver.maps.LatLng(points[i].lat, points[i].lng));
+      }
+      
+      // 경로선 생성
+      var polyline = new naver.maps.Polyline({
+        path: path,
+        strokeColor: color,
+        strokeWeight: 5,
+        strokeOpacity: 0.8,
+        map: map
+      });
+      
+      // 경로 객체 저장
+      polylines[routeId] = polyline;
+      
+      // 경로 표시 후 지도 범위 조정
+      if (path.length > 0) {
+        var bounds = new naver.maps.LatLngBounds();
+        for (var i = 0; i < path.length; i++) {
+          bounds.extend(path[i]);
+        }
+        map.fitBounds(bounds, {
+          top: 50,
+          right: 50,
+          bottom: 50,
+          left: 50
+        });
+      }
+    }
+    
+    // 경로 제거
+    function removeRoute(routeId) {
+      if (polylines[routeId]) {
+        polylines[routeId].setMap(null);
+        delete polylines[routeId];
+      }
+    }
+    
+    // 모든 경로 제거
+    function clearRoutes() {
+      for (var id in polylines) {
+        removeRoute(id);
+      }
+    }
+    
+    // 지도 중심 이동
+    function moveCenter(lat, lng, zoom) {
+      map.setCenter(new naver.maps.LatLng(lat, lng));
+      if (zoom) {
+        map.setZoom(zoom);
+      }
+    }
+    
+    // 페이지 로드 완료 시 네이버 API 로드
+    window.onload = function() {
+      sendMessage({ event: 'pageLoaded' });
+      loadNaverApi();
+    };
+
+    // URL 정보 로깅
+    function logUrlInfo() {
+      console.log('현재 URL: ' + location.href);
+      sendMessage({
+        event: 'urlInfo',
+        url: location.href,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // 페이지 로드 완료 시 URL 로깅
+    window.addEventListener('load', function() {
+      logUrlInfo();
+      
+      // 5초마다 URL 확인
+      setInterval(logUrlInfo, 5000);
+    });
+  </script>
+</body>
+</html> 

@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:get/get.dart';
+import 'services/local_web_server.dart';
 
 // 인증 정보를 로컬 파일에서 읽어오는 함수
 Future<Map<String, dynamic>> loadAuthConfig() async {
@@ -92,6 +93,11 @@ void main() async {
     print('설정 파일 로드 오류: $e');
     print('기본 네이버 클라이언트 ID 사용: $naverClientId');
   }
+
+  // 웹 서버 시작
+  final webServer = LocalWebServer();
+  final serverUrl = await webServer.startServer();
+  print('서버 URL: $serverUrl');
 
   runApp(const MainApp());
 }

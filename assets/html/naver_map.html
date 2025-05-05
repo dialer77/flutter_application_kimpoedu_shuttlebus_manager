@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>네이버 지도</title>
+    <!-- 네이버 지도 API는 동적으로 로드됨 -->
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; }
+        #map { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        
+
+       
+
+        
+
+        // 네이버 지도 API 동적 로드 함수
+        function loadNaverMapsAPI(clientId) {
+            return new Promise((resolve, reject) => {
+                console.log('네이버 지도 API 로드 시작, 클라이언트 ID:', clientId);
+                
+                // 이미 로드되었는지 확인
+                if (window.naver && window.naver.maps) {
+                    console.log('네이버 지도 API가 이미 로드되어 있습니다.');
+                    initMap();
+                    resolve();
+                    return;
+                }
+                
+                // 스크립트 엘리먼트 생성
+                const script = document.createElement('script');
+                script.type = 'text/javascript';
+                script.src = `https://openapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${clientId}&submodules=geocoder`;
+                
+                // 로드 이벤트 처리
+                script.onload = function() {
+                    console.log('네이버 지도 API 로드 완료');
+                    console.log('API 상태:', {
+                        naver: typeof naver !== 'undefined',
+                        maps: typeof naver !== 'undefined' && typeof naver.maps !== 'undefined',
+                        Service: typeof naver !== 'undefined' && typeof naver.maps !== 'undefined' && typeof naver.maps.Service !== 'undefined',
+                        Geocoder: typeof naver !== 'undefined' && typeof naver.maps !== 'undefined' && 
+                                typeof naver.maps.Service !== 'undefined' && typeof naver.maps.Service.Geocoder !== 'undefined'
+                    });
+                    
+                    initMap();
+                    resolve();
+                };
+                
+                // 오류 이벤트 처리
+                script.onerror = function(e) {
+                    console.error('네이버 지도 API 로드 실패:', e);
+                    reject(e);
+                };
+                
+                // 문서에 스크립트 추가
+                document.head.appendChild(script);
+            });
+        }
+
+        let infoWindow = null;
+        
+        // 지도 인스턴스 변수
+        let map = null;
+        
+        // 지도 초기화 함수
+        function initMap() {
+            if (map) return; // 이미 초기화된 경우
+            
+            map = new naver.maps.Map('map', {
+                center: new naver.maps.LatLng(37.5666805, 126.9784147),
+                zoom: 15,
+                mapTypeId: naver.maps.MapTypeId.NORMAL
+            });
+
+            infoWindow = new naver.maps.InfoWindow({
+                anchorSkew: true
+            });
+
+            map.setCursor('pointer');
+            
+            // 초기화 완료 알림
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    event: 'mapInitialized',
+                    timestamp: new Date().toISOString()
+                }));
+                console.log('Map initialized message sent');
+            } catch(e) {
+                console.error('Error sending initialized message:', e);
+            }
+        }
+        
+        // 마커 목록
+        var markers = {};
+        
+        // 경로선 목록
+        var polylines = {};
+        
+        // 마커 추가 함수
+        function addMarker(id, lat, lng, name, type) {
+            var position = new naver.maps.LatLng(lat, lng);
+            var icon;
+            
+            // 마커 타입에 따른 아이콘 설정
+            if (type === 'start') {
+                icon = {
+                    content: '<div style="background-color: #2196F3; color: white; padding: 5px; border-radius: 50%; font-weight: bold;">S</div>',
+                    size: new naver.maps.Size(20, 20),
+                    anchor: new naver.maps.Point(10, 10)
+                };
+            } else if (type === 'end') {
+                icon = {
+                    content: '<div style="background-color: #F44336; color: white; padding: 5px; border-radius: 50%; font-weight: bold;">E</div>',
+                    size: new naver.maps.Size(20, 20),
+                    anchor: new naver.maps.Point(10, 10)
+                };
+            } else {
+                icon = {
+                    content: '<div style="background-color: #4CAF50; color: white; padding: 5px; border-radius: 50%; font-weight: bold;">W</div>',
+                    size: new naver.maps.Size(20, 20),
+                    anchor: new naver.maps.Point(10, 10)
+                };
+            }
+            
+            // 마커 생성
+            var marker = new naver.maps.Marker({
+                position: position,
+                map: map,
+                title: name,
+                icon: icon
+            });
+            
+            // 정보창 생성
+            var infoWindow = new naver.maps.InfoWindow({
+                content: '<div style="padding: 10px;">' + name + '</div>'
+            });
+            
+            // 마커 클릭 이벤트
+            naver.maps.Event.addListener(marker, 'click', function() {
+                if (infoWindow.getMap()) {
+                    infoWindow.close();
+                } else {
+                    infoWindow.open(map, marker);
+                }
+            });
+            
+            // 마커 저장
+            markers[id] = { marker: marker, infoWindow: infoWindow };
+        }
+        
+        // 경로선 그리기 함수
+        function drawRoute(routeId, points, color) {
+            // 기존 경로선 제거
+            if (polylines[routeId]) {
+                polylines[routeId].setMap(null);
+            }
+            
+            // 경로선 좌표 생성
+            var path = [];
+            for (var i = 0; i < points.length; i++) {
+                path.push(new naver.maps.LatLng(points[i].lat, points[i].lng));
+            }
+            
+            // 경로선 생성
+            polylines[routeId] = new naver.maps.Polyline({
+                map: map,
+                path: path,
+                strokeColor: color,
+                strokeWeight: 5,
+                strokeOpacity: 0.7
+            });
+            
+            // 경로 범위로 지도 이동
+            if (path.length > 0) {
+                var bounds = new naver.maps.LatLngBounds();
+                for (var i = 0; i < path.length; i++) {
+                    bounds.extend(path[i]);
+                }
+                map.fitBounds(bounds);
+            }
+        }
+        
+        // 경로선 제거 함수
+        function removeRoute(routeId) {
+            if (polylines[routeId]) {
+                polylines[routeId].setMap(null);
+                delete polylines[routeId];
+            }
+        }
+        
+        // 모든 마커 제거 함수
+        function clearMarkers() {
+            for (var id in markers) {
+                markers[id].marker.setMap(null);
+                if (markers[id].infoWindow) {
+                    markers[id].infoWindow.close();
+                }
+            }
+            markers = {};
+        }
+        
+        // 모든 경로선 제거 함수
+        function clearRoutes() {
+            for (var id in polylines) {
+                polylines[id].setMap(null);
+            }
+            polylines = {};
+        }
+        
+        // 지도 중심 이동 함수
+        function moveCenter(lat, lng, zoomLevel) {
+            map.setCenter(new naver.maps.LatLng(lat, lng));
+            map.setZoom(zoomLevel);
+        }
+        
+        // 검색 함수 수정 - 결과를 Flutter로 전송
+        function searchAddress(query, searchId) {
+            console.log('searchAddress 함수 호출됨: ' + query + ', ID: ' + searchId);
+            
+            // 트랜잭션 ID 생성 (결과 식별용) - searchId가 없는 경우를 위한 기본값
+            if (!searchId) {
+                searchId = 'search_' + Date.now();
+            }
+            
+            // 검색 시작을 알림
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    event: 'searchStarted',
+                    searchId: searchId,
+                    query: query
+                }));
+            } catch(e) {
+                console.error('검색 시작 메시지 전송 오류:', e);
+            }
+            
+            naver.maps.Service.geocode({
+                query: query
+            }, function(status, response) {
+                console.log('geocoder.geocode 응답:', { 
+                    status: status, 
+                    meta: response && response.v2 ? response.v2.meta : null 
+                });
+                
+                var results = [];
+                var errorMessage = null;
+                
+                if (status !== naver.maps.Service.Status.OK) {
+                    console.error('지오코더 오류:', { status: status });
+                    errorMessage = '검색 오류: ' + status;
+                } else if (response.v2.meta.totalCount > 0) {
+                    console.log('검색 결과 있음:', response.v2.meta.totalCount);
+                    for (var i = 0; i < response.v2.addresses.length; i++) {
+                        var item = response.v2.addresses[i];
+                        results.push({
+                            name: item.roadAddress || item.jibunAddress,
+                            lat: parseFloat(item.y),
+                            lng: parseFloat(item.x),
+                            address: item.jibunAddress,
+                            roadAddress: item.roadAddress
+                        });
+                    }
+                } else {
+                    console.log('검색 결과 없음');
+                }
+                
+                // 결과를 Flutter로 전송
+                try {
+                    window.chrome.webview.postMessage(JSON.stringify({
+                        event: 'searchComplete',
+                        searchId: searchId,
+                        query: query,
+                        results: results,
+                        error: errorMessage,
+                        timestamp: new Date().toISOString()
+                    }));
+                    console.log('검색 결과 메시지 전송 완료', { count: results.length });
+                } catch(e) {
+                    console.error('검색 결과 메시지 전송 오류:', e);
+                }
+            });
+            
+            // 함수는 void 반환 (Promise 미사용)
+            return null;
+        }
+        
+        // 로그 함수 재정의
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+        
+        console.log = function() {
+            const args = Array.from(arguments).map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+            ).join(' ');
+            
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    event: 'console',
+                    type: 'log',
+                    message: args
+                }));
+            } catch(e) {}
+            
+            originalConsoleLog.apply(console, arguments);
+        };
+        
+        console.error = function() {
+            const args = Array.from(arguments).map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+            ).join(' ');
+            
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    event: 'console',
+                    type: 'error',
+                    message: args
+                }));
+            } catch(e) {}
+            
+            originalConsoleError.apply(console, arguments);
+        };
+    </script>
+</body>
+</html>
+    
