@@ -195,22 +195,49 @@
         }
         
         // 모든 마커 제거 함수
-        function clearMarkers() {
-            for (var id in markers) {
-                markers[id].marker.setMap(null);
-                if (markers[id].infoWindow) {
-                    markers[id].infoWindow.close();
+        function clearAllMarkers() {
+            console.log('모든 마커 제거 요청');
+            // 모든 마커 지우기
+            for (const key in markers) {
+                if (markers.hasOwnProperty(key)) {
+                    markers[key].setMap(null);
                 }
             }
+            // 마커 객체 초기화
             markers = {};
+            
+            // 결과 반환
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    event: 'markersCleared',
+                    message: '모든 마커가 제거되었습니다.'
+                }));
+            } catch(e) {
+                console.error('마커 제거 메시지 전송 오류:', e);
+            }
         }
         
         // 모든 경로선 제거 함수
-        function clearRoutes() {
-            for (var id in polylines) {
-                polylines[id].setMap(null);
+        function clearAllRoutes() {
+            console.log('모든 경로선 제거 요청');
+            // 모든 경로선 지우기
+            for (const key in polylines) {
+                if (polylines.hasOwnProperty(key)) {
+                    polylines[key].setMap(null);
+                }
             }
+            // 경로선 객체 초기화
             polylines = {};
+            
+            // 결과 반환
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    event: 'routesCleared',
+                    message: '모든 경로선이 제거되었습니다.'
+                }));
+            } catch(e) {
+                console.error('경로선 제거 메시지 전송 오류:', e);
+            }
         }
         
         // 지도 중심 이동 함수

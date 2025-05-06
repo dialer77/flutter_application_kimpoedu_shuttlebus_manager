@@ -572,6 +572,38 @@ class NaverMapService {
       rethrow;
     }
   }
+
+  // 모든 마커 제거
+  Future<void> clearAllMarkers() async {
+    try {
+      await waitForInitialization();
+
+      await _controller.executeScript('''
+        clearAllMarkers();
+      ''');
+
+      print('모든 마커 제거됨');
+    } catch (e) {
+      print('마커 제거 오류: $e');
+      rethrow;
+    }
+  }
+
+  // 모든 경로선 제거
+  Future<void> clearAllRoutes() async {
+    try {
+      await waitForInitialization();
+
+      await _controller.executeScript('''
+        clearAllRoutes();
+      ''');
+
+      print('모든 경로선 제거됨');
+    } catch (e) {
+      print('경로선 제거 오류: $e');
+      rethrow;
+    }
+  }
 }
 
 // Completer 확장 - 완료 여부 확인

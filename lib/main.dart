@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_kimpoedu_shuttlebus_manager/controllers/synology_controller.dart';
 import 'package:flutter_application_kimpoedu_shuttlebus_manager/pages/main_page.dart';
+import 'package:flutter_application_kimpoedu_shuttlebus_manager/services/route_manager.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -76,10 +77,14 @@ void main() async {
   final synologyController = Get.put(SynologyController(), permanent: true);
   await synologyController.initializeConnection(quickConnectId, username, password);
 
+  // 경로 매니저 초기화
+  final routeManager = Get.put(RouteManager(), permanent: true);
+
   // NAS에서 설정 파일 로드 시도
   try {
     if (synologyController.isConnected.value) {
-      const configPath = '/Navigation/config.json'; // 적절한 경로로 수정 필요
+      // 1. 네이버 API 설정 로드
+      const configPath = '/Navigation/config.json';
       final jsonString = await synologyController.loadConfigFile(configPath);
       final config = json.decode(jsonString);
 
@@ -88,10 +93,12 @@ void main() async {
         synologyController.naverClientId = naverClientId;
         print('NAS에서 네이버 클라이언트 ID 로드 성공: $naverClientId');
       }
+
+      // 2. 경로 데이터 로드
+      await synologyController.loadRouteData(routeManager);
     }
   } catch (e) {
-    print('설정 파일 로드 오류: $e');
-    print('기본 네이버 클라이언트 ID 사용: $naverClientId');
+    print('설정 또는 경로 데이터 로드 오류: $e');
   }
 
   // 웹 서버 시작

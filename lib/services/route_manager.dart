@@ -248,4 +248,86 @@ class RouteManager {
       return routes.first;
     }
   }
+
+  // 모든 경로 데이터를 JSON으로 내보내기
+  Map<String, dynamic> exportToJson() {
+    final routesJson = _routes
+        .map((route) => {
+              'routeId': route.routeId,
+              'vehicleId': route.vehicleId,
+              'isAM': route.isAM,
+              'points': route.points
+                  .map((point) => {
+                        'id': point.id,
+                        'name': point.name,
+                        'latitude': point.latitude,
+                        'longitude': point.longitude,
+                        'address': point.address,
+                        'type': point.type,
+                        'sequence': point.sequence,
+                      })
+                  .toList(),
+              'totalDistance': route.totalDistance,
+              'estimatedTime': route.estimatedTime,
+              'isActive': route.isActive,
+            })
+        .toList();
+
+    return {
+      'routes': routesJson,
+      'nextRouteId': _nextRouteId,
+      'version': '1.0', // 버전 정보 추가
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+  }
+
+  // JSON에서 경로 데이터 가져오기
+  void importFromJson(Map<String, dynamic> json) {
+    // 기존 데이터 초기화
+    clearAllRoutes();
+
+    // 라우트 ID 설정
+    if (json.containsKey('nextRouteId')) {
+      _nextRouteId = json['nextRouteId'];
+    }
+
+    // 경로 데이터 로드
+    if (json.containsKey('routes')) {
+      final routesJson = json['routes'] as List;
+
+      for (var routeJson in routesJson) {
+        final List<RoutePoint> points = [];
+
+        // 포인트 데이터 로드
+        if (routeJson.containsKey('points')) {
+          final pointsJson = routeJson['points'] as List;
+
+          for (var pointJson in pointsJson) {
+            points.add(RoutePoint(
+              id: pointJson['id'],
+              name: pointJson['name'],
+              latitude: pointJson['latitude'],
+              longitude: pointJson['longitude'],
+              address: pointJson['address'],
+              type: pointJson['type'],
+              sequence: pointJson['sequence'] ?? 0,
+            ));
+          }
+        }
+
+        // 경로 추가
+        final route = RouteInfo(
+          routeId: routeJson['routeId'],
+          vehicleId: routeJson['vehicleId'],
+          isAM: routeJson['isAM'],
+          points: points,
+          totalDistance: routeJson['totalDistance'],
+          estimatedTime: routeJson['estimatedTime'],
+          isActive: routeJson['isActive'] ?? true,
+        );
+
+        _routes.add(route);
+      }
+    }
+  }
 }
