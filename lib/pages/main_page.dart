@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_kimpoedu_shuttlebus_manager/models/route_point.dart';
@@ -7,9 +6,8 @@ import 'package:get/get.dart';
 import 'package:webview_windows/webview_windows.dart';
 
 import '../models/vehicle_route_info.dart';
-import '../models/route_info.dart';
 import '../services/route_manager.dart';
-import '../services/naver_map_service.dart';
+import '../services/tmap/t_map_service.dart';
 import '../controllers/synology_controller.dart';
 
 class MainPage extends StatefulWidget {
@@ -24,7 +22,7 @@ class _MainPageState extends State<MainPage> {
   List<VehicleRouteInfo> routeInfoList = [VehicleRouteInfo(id: 1, isAM: true)];
   final RouteManager _routeManager = RouteManager();
 
-  final NaverMapService _naverMapService = NaverMapService();
+  final TMapService _tMapService = TMapService();
 
   bool _isMapInitialized = false;
   bool _isMapLoading = false;
@@ -34,6 +32,9 @@ class _MainPageState extends State<MainPage> {
   bool _isSearching = false;
 
   int _selectedVehicleIndex = 0; // 현재 선택된 차량 인덱스
+
+  // StreamSubscription 필드 추가
+  StreamSubscription? _messageSubscription;
 
   @override
   void initState() {
@@ -55,18 +56,18 @@ class _MainPageState extends State<MainPage> {
     });
 
     try {
-      // Synology Controller에서 네이버 클라이언트 ID 확인
+      // Synology Controller에서 티맵 클라이언트 ID 확인
       final synologyController = Get.find<SynologyController>();
-      if (synologyController.naverClientId.isEmpty) {
-        print('네이버 클라이언트 ID가 설정되지 않았습니다.');
-        throw Exception('네이버 클라이언트 ID가 설정되지 않았습니다. 시놀로지 NAS 연결을 확인하세요.');
+      if (synologyController.tmapClientId.isEmpty) {
+        print('티맵 클라이언트 ID가 설정되지 않았습니다.');
+        throw Exception('티맵 클라이언트 ID가 설정되지 않았습니다. 시놀로지 NAS 연결을 확인하세요.');
       }
 
-      // 네이버 지도 서비스 초기화
+      // 티맵 지도 서비스 초기화
       await _loadMap();
 
       // 메시지 리스너 설정 - 새로운 메시지 스트림 사용
-      _messageSubscription = _naverMapService.messageStream.listen(_handleMapMessage);
+      _messageSubscription = _tMapService.messageStream.listen(_handleMapMessage);
     } catch (e) {
       print('지도 초기화 오류: $e');
       if (mounted) {
@@ -118,20 +119,9 @@ class _MainPageState extends State<MainPage> {
         setState(() {
           _isMapInitialized = true;
         });
-        // 초기화 완료 후 URL 확인
-        _naverMapService.getCurrentUrl().then((url) {
-          print('지도 초기화 완료 후 URL: $url');
-        });
-      } else if (data['event'] == 'urlInfo' || data['event'] == 'urlChanged') {
-        // URL 정보 로깅
-        print('WebView URL 정보 [${data['event']}]: ${data['url']}');
-        print('타임스탬프: ${data['timestamp']}');
-      } else if (data['event'] == 'apiStatus') {
-        print('API 상태: ${data['status']} ${data['statusText']}');
       } else if (data['event'] == 'consoleLog') {
         print('지도 콘솔[${data['level']}]: ${data['message']}');
       } else if (data['event'] == 'mapClicked') {
-        // 지도 클릭 이벤트 처리
         print('지도 클릭: ${data['lat']}, ${data['lng']}');
       }
     } catch (e) {
@@ -147,7 +137,7 @@ class _MainPageState extends State<MainPage> {
     });
 
     try {
-      await _naverMapService.loadMap();
+      await _tMapService.loadMap();
 
       setState(() {
         _isMapInitialized = true;
@@ -191,13 +181,10 @@ class _MainPageState extends State<MainPage> {
     }
   }
 
-  // StreamSubscription 필드 추가
-  StreamSubscription? _messageSubscription;
-
   @override
   void dispose() {
     _messageSubscription?.cancel(); // 구독 취소
-    _naverMapService.dispose();
+    _tMapService.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -277,13 +264,16 @@ class _MainPageState extends State<MainPage> {
                                   final currentCount = vehicleCount;
 
                                   if (currentCount > 1) {
-                                    // 마지막 차량 제거
-                                    _routeManager.removeVehicle(currentCount - 1);
+                                    // 선택된 차량 제거
+                                    _routeManager.removeVehicle(_selectedVehicleIndex);
 
-                                    // 선택된 차량이 제거되는 경우 인덱스 조정
+                                    // 선택된 차량이 마지막 차량인 경우 인덱스 조정
                                     if (_selectedVehicleIndex >= currentCount - 1) {
                                       _selectedVehicleIndex = currentCount - 2; // 마지막 차량 이전으로 선택
                                     }
+
+                                    // 선택된 차량의 경로 마커 및 경로선 제거
+                                    _tMapService.clearMap();
 
                                     // UI 업데이트
                                     _updateVehicleRouteInfo();
@@ -326,7 +316,7 @@ class _MainPageState extends State<MainPage> {
 
                             // 시작 지점이 있으면 지도를 해당 위치로 이동
                             if (startPoint != null) {
-                              _naverMapService.moveToLocation(startPoint.latitude, startPoint.longitude, 14 // 줌 레벨
+                              _tMapService.moveToLocation(startPoint.latitude, startPoint.longitude, 14 // 줌 레벨
                                   );
                             }
 
@@ -409,27 +399,27 @@ class _MainPageState extends State<MainPage> {
                                 tooltip: '경로 최적화',
                                 onPressed: () {
                                   // 경로 최적화 실행
-                                  final success = _routeManager.optimizeRoute(_selectedVehicleIndex);
+                                  final success = _tMapService.optimizeRoute(_routeManager.getRoutePoints(_selectedVehicleIndex));
 
-                                  if (success) {
-                                    setState(() {
-                                      // 경로선 업데이트
-                                      _updateRoutePolyline(_selectedVehicleIndex);
-                                      // 선택된 차량의 경로 강조
-                                      _highlightSelectedVehicleRoute();
-                                    });
+                                  // if (success) {
+                                  //   setState(() {
+                                  //     // 경로선 업데이트
+                                  //     _updateRoutePolyline(_selectedVehicleIndex);
+                                  //     // 선택된 차량의 경로 강조
+                                  //     _highlightSelectedVehicleRoute();
+                                  //   });
 
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('경로가 최적화되었습니다')),
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('경로 최적화를 위해 최소 3개 이상의 지점이 필요합니다'),
-                                        backgroundColor: Colors.orange,
-                                      ),
-                                    );
-                                  }
+                                  //   ScaffoldMessenger.of(context).showSnackBar(
+                                  //     const SnackBar(content: Text('경로가 최적화되었습니다')),
+                                  //   );
+                                  // } else {
+                                  //   ScaffoldMessenger.of(context).showSnackBar(
+                                  //     const SnackBar(
+                                  //       content: Text('경로 최적화를 위해 최소 3개 이상의 지점이 필요합니다'),
+                                  //       backgroundColor: Colors.orange,
+                                  //     ),
+                                  //   );
+                                  // }
                                 },
                               ),
                             ],
@@ -444,10 +434,16 @@ class _MainPageState extends State<MainPage> {
                           Expanded(
                             child: ListView.builder(
                               shrinkWrap: true,
-                              itemCount: _routeManager.getRoutePointCount(_selectedVehicleIndex),
+                              // 필터링해서 경유지만 카운트
+                              itemCount: _routeManager.getRoutePoints(_selectedVehicleIndex).where((point) => point.type != 'start' && point.type != 'end').length,
                               itemBuilder: (context, idx) {
-                                final routePoint = _routeManager.getRoutePoints(_selectedVehicleIndex)[idx];
-                                return _buildRoutePointTile(routePoint, idx);
+                                // 경유지만 필터링해서 가져오기
+                                final waypointsOnly = _routeManager.getRoutePoints(_selectedVehicleIndex).where((point) => point.type != 'start' && point.type != 'end').toList();
+                                final routePoint = waypointsOnly[idx];
+                                return _buildRoutePointTile(
+                                    routePoint,
+                                    // 원래 인덱스 찾기
+                                    _routeManager.getRoutePoints(_selectedVehicleIndex).indexOf(routePoint));
                               },
                             ),
                           ),
@@ -601,7 +597,7 @@ class _MainPageState extends State<MainPage> {
                                     contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: _searchResults.length > 5 ? 4 : 8),
                                     onTap: () {
                                       // 선택한 항목을 지도에 표시
-                                      _showSearchResultOnMap(item);
+                                      _registSearchResult(item);
 
                                       // 검색 결과 목록 닫기
                                       setState(() {
@@ -624,7 +620,7 @@ class _MainPageState extends State<MainPage> {
                       // 기졸 WebView 코드
                       Container(
                         color: Colors.grey[200],
-                        child: _isMapInitialized ? Webview(_naverMapService.controller) : const Center(child: CircularProgressIndicator()),
+                        child: _isMapInitialized ? Webview(_tMapService.controller) : const Center(child: CircularProgressIndicator()),
                       ),
                       if (_isMapLoading)
                         Container(
@@ -653,8 +649,8 @@ class _MainPageState extends State<MainPage> {
     });
 
     try {
-      // NaverMapService의 searchLocation 메서드 호출
-      final results = await _naverMapService.searchLocation(query);
+      // TMapService의 searchLocation 메서드 호출
+      final results = await _tMapService.searchLocation(query);
 
       // 검색 결과 처리
       setState(() {
@@ -670,6 +666,13 @@ class _MainPageState extends State<MainPage> {
 
         // 검색 결과가 있음을 알림
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${_searchResults.length}개의 검색 결과를 찾았습니다')));
+
+        // 첫 번째 검색 결과 위치로 지도 이동
+        if (_searchResults.isNotEmpty && _searchResults[0].containsKey('lat') && _searchResults[0].containsKey('lng')) {
+          final firstResult = _searchResults[0];
+          await _tMapService.moveToLocation(firstResult['lat'], firstResult['lng'], 16 // 줌 레벨
+              );
+        }
       }
     } catch (e) {
       print('위치 검색 오류: $e');
@@ -682,8 +685,7 @@ class _MainPageState extends State<MainPage> {
     }
   }
 
-  // _showSearchResultOnMap 함수 수정 - 현재 시간대 반영
-  void _showSearchResultOnMap(Map<String, dynamic> location) {
+  void _registSearchResult(Map<String, dynamic> location) {
     if (location.containsKey('lat') && location.containsKey('lng')) {
       // 마커 고유 ID 생성
       final markerId = 'vehicle_${_selectedVehicleIndex + 1}_${DateTime.now().millisecondsSinceEpoch}';
@@ -699,13 +701,8 @@ class _MainPageState extends State<MainPage> {
         pointType = 'start';
       }
 
-      // 마커 추가
-      _naverMapService.addMarkerWithId(markerId, location['lat'], location['lng'], location['name'] ?? '선택된 위치', pointType // 마커 타입
-          );
-
       // 지도 위치 이동
-      _naverMapService.moveToLocation(location['lat'], location['lng'], 16 // 줌 레벨
-          );
+      _tMapService.moveToLocation(location['lat'], location['lng'], 16);
 
       // RouteManager를 통해 선택된 차량의 동선에 위치 추가 (현재 시간대 지정)
       setState(() {
@@ -737,7 +734,7 @@ class _MainPageState extends State<MainPage> {
               final removedPoint = _routeManager.removeLastRoutePoint(_selectedVehicleIndex);
               if (removedPoint != null) {
                 // 마커 제거
-                _naverMapService.removeMarker(removedPoint.id);
+                _tMapService.removeMarker(removedPoint.id);
                 // 경로선 업데이트
                 _updateRoutePolyline(_selectedVehicleIndex);
               }
@@ -790,7 +787,7 @@ class _MainPageState extends State<MainPage> {
       final opacity = (vehicleIndex == _selectedVehicleIndex) ? 1.0 : 0.7;
 
       // 경로선 그리기
-      _naverMapService.drawRoute('route_${vehicleIndex + 1}', coordinates, color, thickness);
+      // _tMapService.drawRoute('route_${vehicleIndex + 1}', coordinates, color, thickness);
     }
   }
 
@@ -835,7 +832,7 @@ class _MainPageState extends State<MainPage> {
         final opacity = (i == _selectedVehicleIndex) ? 1.0 : 0.7;
 
         // 경로선 그리기
-        _naverMapService.drawRoute('route_${i + 1}', coordinates, color, thickness);
+        // _tMapService.drawRoute('route_${i + 1}', coordinates, color, thickness);
       }
     }
   }
@@ -843,6 +840,7 @@ class _MainPageState extends State<MainPage> {
   // 차량 경로 정보 UI 업데이트
   void _updateVehicleRouteInfo() {
     setState(() {
+      _displayRoutePoints(_selectedVehicleIndex);
       // 필요한 경우 차량 수에 맞게 경로 정보 업데이트
       // vehicleCount는 이제 getter를 통해 RouteManager의 데이터를 반영
 
@@ -977,31 +975,9 @@ class _MainPageState extends State<MainPage> {
         radius: 14,
         child: Icon(icon, size: 16, color: iconColor),
       ),
-      title: Row(
-        children: [
-          Text(
-            routePoint.name,
-            style: const TextStyle(fontSize: 14),
-          ),
-          const SizedBox(width: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              typeText,
-              style: TextStyle(fontSize: 10, color: iconColor),
-            ),
-          ),
-        ],
-      ),
-      subtitle: Text(
-        routePoint.address.isNotEmpty ? routePoint.address : '주소 정보 없음',
-        style: const TextStyle(fontSize: 11),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      title: Text(
+        routePoint.name,
+        style: const TextStyle(fontSize: 14),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1052,7 +1028,7 @@ class _MainPageState extends State<MainPage> {
                 final removedPoint = _routeManager.removeRoutePoint(_selectedVehicleIndex, index);
                 if (removedPoint != null) {
                   // 마커 제거
-                  _naverMapService.removeMarker(removedPoint.id);
+                  _tMapService.removeMarker(removedPoint.id);
                   // 경로선 업데이트
                   _updateRoutePolyline(_selectedVehicleIndex);
                 }
@@ -1073,7 +1049,7 @@ class _MainPageState extends State<MainPage> {
     final isAM = timeSelections[0];
 
     // 지도에 표시된 모든 마커 초기화
-    _naverMapService.clearAllMarkers();
+    _tMapService.clearAllMarkers();
 
     // 선택된 차량의 경로 포인트 가져오기
     final routePoints = _routeManager.getRoutePoints(vehicleIndex, isAM: isAM);
@@ -1088,22 +1064,8 @@ class _MainPageState extends State<MainPage> {
 
     // 각 포인트 타입에 따라 다른 마커로 표시
     for (final point in routePoints) {
-      // 마커 유형 결정
-      String markerType;
-
-      switch (point.type) {
-        case 'start':
-          markerType = 'start';
-          break;
-        case 'end':
-          markerType = 'end';
-          break;
-        default:
-          markerType = 'waypoint';
-      }
-
       // 마커 추가
-      _naverMapService.addMarkerWithId(point.id, point.latitude, point.longitude, point.name, markerType);
+      _tMapService.addMarker(point, routePoints.indexOf(point) + 1);
     }
 
     // 경로선 업데이트

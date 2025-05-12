@@ -24,7 +24,7 @@ class LocalWebServer {
   String? get serverUrl => _port != null ? 'http://localhost:$_port' : null;
 
   // 로컬 웹 서버 시작
-  Future<String?> startServer() async {
+  Future<String?> startServer(String appKey) async {
     if (_isRunning) {
       print('서버가 이미 실행 중입니다: http://localhost:$_port');
       return serverUrl;
@@ -32,12 +32,12 @@ class LocalWebServer {
 
     try {
       // 임시 디렉토리에 HTML 파일 복사
-      _htmlDirectory = await _prepareHtmlFiles();
+      _htmlDirectory = await _prepareHtmlFiles(appKey);
 
       // 정적 파일 핸들러 생성
       final staticHandler = createStaticHandler(
         _htmlDirectory!,
-        defaultDocument: 'naver_map.html',
+        defaultDocument: 't_map.html',
       );
 
       // CORS 및 로깅 미들웨어 적용
@@ -81,6 +81,21 @@ class LocalWebServer {
       _server = null;
       _port = null;
       _isRunning = false;
+
+      // 임시 HTML 파일 정리
+      if (_htmlDirectory != null) {
+        try {
+          final htmlDir = Directory(_htmlDirectory!);
+          if (await htmlDir.exists()) {
+            await htmlDir.delete(recursive: true);
+            print('임시 HTML 파일이 삭제되었습니다: $_htmlDirectory');
+          }
+        } catch (e) {
+          print('임시 HTML 파일 삭제 중 오류 발생: $e');
+        }
+        _htmlDirectory = null;
+      }
+
       print('로컬 웹 서버가 중지되었습니다.');
     }
   }
@@ -111,8 +126,8 @@ class LocalWebServer {
     };
   }
 
-  // HTML 파일을 임시 디렉토리에 복사
-  Future<String> _prepareHtmlFiles() async {
+  // HTML 파일을 임시 디렉토리에 복사하고 APP_KEY를 대체
+  Future<String> _prepareHtmlFiles(String appKey) async {
     final tempDir = await getTemporaryDirectory();
     final htmlDir = Directory(path.join(tempDir.path, 'html_server'));
 
@@ -131,7 +146,11 @@ class LocalWebServer {
       // 각 HTML 파일 복사
       for (final assetPath in htmlAssets) {
         final fileName = path.basename(assetPath);
-        final content = await rootBundle.loadString(assetPath);
+        var content = await rootBundle.loadString(assetPath);
+
+        // 모든 APP_KEY 문자열을 실제 API 키로 대체
+        content = content.replaceAll('APP_KEY', appKey);
+        print('$fileName 파일에서 모든 API 키 대체 완료');
 
         final file = File(path.join(htmlDir.path, fileName));
         await file.writeAsString(content);

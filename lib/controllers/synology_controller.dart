@@ -8,6 +8,7 @@ import 'package:get/get.dart';
 class SynologyController extends GetxController {
   SynologyApi? api;
   String naverClientId = '';
+  String tmapClientId = '';
 
   // 경로 파일 저장 경로를 config.json과 동일한 폴더로 변경
   final String defaultRoutePath = '/Navigation';

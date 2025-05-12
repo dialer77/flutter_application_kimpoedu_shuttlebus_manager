@@ -500,7 +500,7 @@ class RouteManager {
     }
 
     // 필요한 차량 ID들
-    final neededVehicleIds = List.generate(count, (index) => index + 1);
+    final neededVehicleIds = List.generate(count, (index) => index);
 
     // 각 필요한 차량 ID에 대해 경로 확인 및 생성
     for (final vehicleId in neededVehicleIds) {

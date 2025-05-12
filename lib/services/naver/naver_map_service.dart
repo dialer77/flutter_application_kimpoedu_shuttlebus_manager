@@ -6,11 +6,11 @@ import 'package:get/get.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'local_web_server.dart';
+import '../local_web_server.dart';
 
-import '../models/route_point.dart';
-import '../models/route_info.dart';
-import '../controllers/synology_controller.dart';
+import '../../models/route_point.dart';
+import '../../models/route_info.dart';
+import '../../controllers/synology_controller.dart';
 
 class NaverMapService {
   static final NaverMapService _instance = NaverMapService._internal();
@@ -202,7 +202,7 @@ class NaverMapService {
       // 로컬 웹 서버가 실행 중인지 확인하고 필요시 시작
       final webServer = LocalWebServer();
       if (!webServer.isRunning) {
-        await webServer.startServer();
+        await webServer.startServer(_naverMapClientId);
       }
 
       if (webServer.serverUrl == null) {

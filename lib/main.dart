@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:get/get.dart';
-import 'services/local_web_server.dart';
+import 'package:window_manager/window_manager.dart';
 
 // 인증 정보를 로컬 파일에서 읽어오는 함수
 Future<Map<String, dynamic>> loadAuthConfig() async {
@@ -59,11 +59,15 @@ Future<void> saveAuthConfig(Map<String, dynamic> config) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 데스크톱 플랫폼(Windows)에서만 창 크기 설정
+  if (Platform.isWindows) {
+    await windowManager.ensureInitialized();
+    WindowManager.instance.setMinimumSize(const Size(1440, 900));
+    WindowManager.instance.setSize(const Size(1440, 900));
+    WindowManager.instance.setTitle('KimpoEdu Shuttle Bus Manager');
+  }
   // GetX 초기화
   await initializeGetX();
-
-  // 기본 클라이언트 ID (fallback용)
-  String naverClientId = '';
 
   // 인증 정보 로드
   final authConfig = await loadAuthConfig();
@@ -89,9 +93,15 @@ void main() async {
       final config = json.decode(jsonString);
 
       if (config['naverMap'] != null && config['naverMap']['clientId'] != null) {
-        naverClientId = config['naverMap']['clientId'];
+        var naverClientId = config['naverMap']['clientId'];
         synologyController.naverClientId = naverClientId;
         print('NAS에서 네이버 클라이언트 ID 로드 성공: $naverClientId');
+      }
+
+      if (config['tMap'] != null && config['tMap']['clientId'] != null) {
+        var tMapClientId = config['tMap']['clientId'];
+        synologyController.tmapClientId = tMapClientId;
+        print('NAS에서 티맵 클라이언트 ID 로드 성공: $tMapClientId');
       }
 
       // 2. 경로 데이터 로드
@@ -100,11 +110,6 @@ void main() async {
   } catch (e) {
     print('설정 또는 경로 데이터 로드 오류: $e');
   }
-
-  // 웹 서버 시작
-  final webServer = LocalWebServer();
-  final serverUrl = await webServer.startServer();
-  print('서버 URL: $serverUrl');
 
   runApp(const MainApp());
 }
