@@ -10,6 +10,7 @@ class RouteInfo {
   int estimatedTime;
   bool isActive; // 경로 활성화 상태
   final DateTime createdAt;
+  List<List<double>> coordinates = []; // 경로 선 좌표 추가
 
   RouteInfo({
     required this.routeId,
@@ -20,7 +21,9 @@ class RouteInfo {
     required this.estimatedTime,
     DateTime? createdAt,
     this.isActive = true, // 기본값은 활성화 상태
-  }) : createdAt = createdAt ?? DateTime.now();
+    List<List<double>>? coordinates,
+  })  : createdAt = createdAt ?? DateTime.now(),
+        coordinates = coordinates ?? [];
 
   // 경로의 시작점
   RoutePoint get startPoint => points.first;
@@ -73,11 +76,22 @@ class RouteInfo {
       'totalDistance': totalDistance,
       'estimatedTime': estimatedTime,
       'isActive': isActive,
+      'coordinates': coordinates, // 좌표 정보 추가
     };
   }
 
   // JSON에서 생성
   factory RouteInfo.fromJson(Map<String, dynamic> json) {
+    List<List<double>> coords = [];
+    if (json.containsKey('coordinates')) {
+      final coordsData = json['coordinates'] as List;
+      for (var coord in coordsData) {
+        if (coord is List) {
+          coords.add(coord.map<double>((e) => e is num ? e.toDouble() : 0.0).toList());
+        }
+      }
+    }
+
     return RouteInfo(
       routeId: json['routeId'],
       vehicleId: json['vehicleId'],
@@ -86,6 +100,7 @@ class RouteInfo {
       totalDistance: json['totalDistance'],
       estimatedTime: json['estimatedTime'],
       isActive: json['isActive'] ?? true,
+      coordinates: coords,
     );
   }
 }

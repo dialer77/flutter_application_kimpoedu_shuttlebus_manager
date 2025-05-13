@@ -397,29 +397,51 @@ class _MainPageState extends State<MainPage> {
                               IconButton(
                                 icon: const Icon(Icons.route, color: Colors.blue),
                                 tooltip: '경로 최적화',
-                                onPressed: () {
-                                  // 경로 최적화 실행
-                                  final success = _tMapService.optimizeRoute(_routeManager.getRoutePoints(_selectedVehicleIndex));
+                                onPressed: () async {
+                                  try {
+                                    // 로딩 표시
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('경로 최적화 중...'),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
 
-                                  // if (success) {
-                                  //   setState(() {
-                                  //     // 경로선 업데이트
-                                  //     _updateRoutePolyline(_selectedVehicleIndex);
-                                  //     // 선택된 차량의 경로 강조
-                                  //     _highlightSelectedVehicleRoute();
-                                  //   });
+                                    // 경로 최적화 실행 (비동기 대기)
+                                    final routePoints = _routeManager.getRoutePoints(_selectedVehicleIndex);
+                                    if (routePoints.length < 2) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('최소 출발지와 도착지가 필요합니다'),
+                                          backgroundColor: Colors.orange,
+                                        ),
+                                      );
+                                      return;
+                                    }
 
-                                  //   ScaffoldMessenger.of(context).showSnackBar(
-                                  //     const SnackBar(content: Text('경로가 최적화되었습니다')),
-                                  //   );
-                                  // } else {
-                                  //   ScaffoldMessenger.of(context).showSnackBar(
-                                  //     const SnackBar(
-                                  //       content: Text('경로 최적화를 위해 최소 3개 이상의 지점이 필요합니다'),
-                                  //       backgroundColor: Colors.orange,
-                                  //     ),
-                                  //   );
-                                  // }
+                                    final result = await _tMapService.optimizeRoute(routePoints);
+
+                                    // 성공 메시지 표시
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('경로 최적화 완료'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+
+                                    // UI 갱신 (RouteManager가 이미 내부적으로 업데이트됨)
+                                    setState(() {
+                                      // 경로 목록 UI 갱신
+                                    });
+                                  } catch (e) {
+                                    // 오류 메시지 표시
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('경로 최적화 실패: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
                                 },
                               ),
                             ],
@@ -432,12 +454,14 @@ class _MainPageState extends State<MainPage> {
                           const SizedBox(height: 8),
                           // 경로 목록 (스크롤 가능)
                           Expanded(
+                            // ListView에 고유 키 추가하여 강제 갱신
                             child: ListView.builder(
+                              key: ValueKey('route_list_${_routeManager.getRoutePoints(_selectedVehicleIndex).map((p) => p.id).join('_')}'),
                               shrinkWrap: true,
                               // 필터링해서 경유지만 카운트
                               itemCount: _routeManager.getRoutePoints(_selectedVehicleIndex).where((point) => point.type != 'start' && point.type != 'end').length,
                               itemBuilder: (context, idx) {
-                                // 경유지만 필터링해서 가져오기
+                                // 경유지만 필터링해서 가져오기 (매번 새로 가져와서 최신 상태 유지)
                                 final waypointsOnly = _routeManager.getRoutePoints(_selectedVehicleIndex).where((point) => point.type != 'start' && point.type != 'end').toList();
                                 final routePoint = waypointsOnly[idx];
                                 return _buildRoutePointTile(
@@ -1055,20 +1079,105 @@ class _MainPageState extends State<MainPage> {
     final routePoints = _routeManager.getRoutePoints(vehicleIndex, isAM: isAM);
 
     if (routePoints.isEmpty) {
-      // 경로가 없는 경우, 이미지 리소스 준비가 필요
+      // 경로가 없는 경우 메시지 표시
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('차량 경로가 없습니다. 검색하여 경로를 추가해주세요.')),
       );
       return;
     }
 
-    // 각 포인트 타입에 따라 다른 마커로 표시
-    for (final point in routePoints) {
+    // 각 경로점에 대해 마커 추가
+    for (int index = 0; index < routePoints.length; index++) {
+      final point = routePoints[index];
       // 마커 추가
-      _tMapService.addMarker(point, routePoints.indexOf(point) + 1);
+      _tMapService.addMarker(point, index);
     }
 
-    // 경로선 업데이트
-    _updateRoutePolyline(vehicleIndex);
+    _tMapService.clearAllRoutes();
+  }
+
+  // 차량 변경 시 호출되는 메서드 개선
+  void _onVehicleChanged(int vehicleIndex) {
+    setState(() {
+      // 이전에 선택된 차량 인덱스 저장
+      final previousVehicleIndex = _selectedVehicleIndex;
+      // 새 차량 인덱스로 업데이트
+      _selectedVehicleIndex = vehicleIndex;
+
+      // 이전 차량과 다른 경우에만 처리
+      if (previousVehicleIndex != vehicleIndex) {
+        // 모든 마커 초기화
+        _tMapService.clearAllMarkers();
+
+        // 모든 경로 지우기
+        _tMapService.clearAllRoutes();
+
+        // 새 차량의 경로점들 표시
+        _displayRoutePoints(_selectedVehicleIndex);
+
+        // 경로선 표시 (RouteManager에 저장된 좌표 사용)
+        _displaySavedRoutePolyline(_selectedVehicleIndex);
+
+        // 경로 정보 UI 갱신
+        _updateVehicleRouteInfo();
+
+        // 경로가 있으면 지도 이동
+        _moveToVehicleRoute(_selectedVehicleIndex);
+      }
+    });
+  }
+
+  // 저장된 경로 좌표로 경로선 표시
+  void _displaySavedRoutePolyline(int vehicleIndex) {
+    // RouteManager에서 저장된 좌표 가져오기
+    final coordinates = _routeManager.getRouteCoordinates(vehicleIndex);
+
+    // 좌표가 있는 경우에만 경로선 그리기
+    if (coordinates.isNotEmpty) {
+      // 지도에 경로선 그리기 위한 형식으로 변환
+      List<Map<String, double>> pathCoordinates = coordinates.map((coord) {
+        return {
+          'lng': coord[0], // 경도
+          'lat': coord[1], // 위도
+        };
+      }).toList();
+
+      // 경로 색상 결정
+      String color;
+      switch (vehicleIndex % 5) {
+        case 0:
+          color = '#FF5722';
+          break; // 주황
+        case 1:
+          color = '#4CAF50';
+          break; // 녹색
+        case 2:
+          color = '#2196F3';
+          break; // 파랑
+        case 3:
+          color = '#9C27B0';
+          break; // 보라
+        case 4:
+          color = '#FFC107';
+          break; // 노랑
+        default:
+          color = '#FF5722';
+      }
+
+      // TMapService를 통해 경로선 그리기
+      _tMapService.drawRoute('vehicle_route_$vehicleIndex', pathCoordinates, color, 6);
+    }
+  }
+
+  // 차량 경로가 있는 지역으로 지도 이동
+  void _moveToVehicleRoute(int vehicleIndex) {
+    final routePoints = _routeManager.getRoutePoints(vehicleIndex);
+
+    // 경로점이 있는 경우
+    if (routePoints.isNotEmpty) {
+      // 첫 번째 경로점으로 지도 이동
+      _tMapService.moveToLocation(routePoints.first.latitude, routePoints.first.longitude, 14 // 줌 레벨
+          );
+    }
   }
 }

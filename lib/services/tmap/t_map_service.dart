@@ -1,13 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_kimpoedu_shuttlebus_manager/services/local_web_server.dart';
+import 'package:flutter_application_kimpoedu_shuttlebus_manager/services/route_manager.dart';
 import 'package:webview_windows/webview_windows.dart';
 import 'dart:async';
 import 'package:get/get.dart';
 import 'dart:math';
+import 'package:http/http.dart' as http;
 
 import '../../models/route_point.dart';
-import '../../models/route_info.dart';
 import '../../controllers/synology_controller.dart';
 
 class TMapService {
@@ -24,7 +25,6 @@ class TMapService {
   final List<Completer<void>> _pendingOperations = [];
   final StreamController<Map<String, dynamic>> _messageController = StreamController<Map<String, dynamic>>.broadcast();
   StreamSubscription? _messageSubscription;
-  final Map<String, Completer<List<Map<String, dynamic>>>> _searchCompleters = {};
   final Map<String, Completer<Map<String, dynamic>>> _optimizationCompleters = {};
 
   // 지도 초기화 여부 확인
@@ -65,14 +65,6 @@ class TMapService {
           // 지도 초기화 완료 이벤트 처리
           else if (data['event'] == 'mapInitialized') {
             _completeInitialization();
-          }
-          // 검색 완료 이벤트 처리
-          else if (data['event'] == 'searchComplete') {
-            _handleSearchComplete(data);
-          }
-          // 경로 최적화 완료 이벤트 처리
-          else if (data['event'] == 'optimizationComplete') {
-            _handleOptimizationComplete(data);
           }
 
           // 스트림을 통해 메시지 브로드캐스트
@@ -223,22 +215,26 @@ class TMapService {
   }
 
   // 경로선 그리기
-  Future<void> drawRoute(String id, List<Map<String, dynamic>> coordinates, String color, int width) async {
-    try {
-      await waitForInitialization();
-      return;
-      // JSON 문자열로 변환
-      final coordsJson = jsonEncode(coordinates);
-
-      await _controller.executeScript('''
-        drawRoute('$id', $coordsJson, '$color', $width);
-      ''');
-
-      print('경로선 그리기: id=$id, 좌표 개수=${coordinates.length}');
-    } catch (e) {
-      print('경로선 그리기 오류: $e');
-      rethrow;
-    }
+  Future<void> drawRoute(String routeId, List<Map<String, double>> coordinates, String color, int thickness) async {
+    await _controller.executeScript('''
+      try {
+        const path = ${jsonEncode(coordinates)}.map(
+          coord => new Tmapv3.LatLng(coord.lat, coord.lng)
+        );
+        
+        const polyline = new Tmapv3.Polyline({
+          path: path,
+          strokeColor: "$color",
+          strokeWeight: $thickness,
+          map: map
+        });
+        
+        routes['$routeId'] = polyline;
+        console.log('경로 $routeId 그리기 완료 (${coordinates.length}개 지점)');
+      } catch (error) {
+        console.error('경로 그리기 오류:', error);
+      }
+    ''');
   }
 
   // 경로 제거 (함수 직접 실행 방식)
@@ -274,15 +270,7 @@ class TMapService {
 
       // 모든 마커 제거 - 함수 정의 대신 직접 코드 실행
       await _controller.executeScript('''
-        try {
-          for (const id in markers) {
-            markers[id].setMap(null);
-          }
-          markers = {};
-          console.log('모든 마커 제거됨');
-        } catch (error) {
-          console.error('모든 마커 제거 오류:', error);
-        }
+       clearMarkers()
       ''');
 
       // 모든 경로선 제거 - 함수 정의 대신 직접 코드 실행
@@ -333,95 +321,67 @@ class TMapService {
     }
   }
 
-  // 위치 검색 - 티맵 지도 API의 주소 검색 서비스 사용
+  // 위치 검색 - HTTP API 직접 호출 방식으로 변경
   Future<List<Map<String, dynamic>>> searchLocation(String query) async {
     try {
       if (query.isEmpty) return [];
 
-      await waitForInitialization();
+      // HTTP 클라이언트 생성
+      final client = http.Client();
 
-      // 검색 ID 생성
-      final searchId = 'search_${DateTime.now().millisecondsSinceEpoch}';
+      try {
+        // TMap API 엔드포인트 URL 설정
+        final url = Uri.parse('https://apis.openapi.sk.com/tmap/pois?version=1&format=json&callback=result');
 
-      // Completer 생성 및 저장
-      final completer = Completer<List<Map<String, dynamic>>>();
-      _searchCompleters[searchId] = completer;
+        // API 요청 헤더 설정
+        final headers = {'appKey': _tmapClientId, 'Content-Type': 'application/json'};
 
-      // 검색 JavaScript 실행 - 함수 호출 대신 직접 코드 실행
-      await _controller.executeScript('''
-        searchLocation("$searchId", "$query");
-      ''');
+        // API 요청 파라미터 설정
+        final params = {
+          'searchKeyword': query,
+          'resCoordType': 'WGS84GEO', // WebView에서는 EPSG3857를 사용했지만 변환 불필요하도록 변경
+          'reqCoordType': 'WGS84GEO',
+          'count': '10'
+        };
 
-      // 결과 대기 (최대 10초)
-      final results = await completer.future.timeout(const Duration(seconds: 10), onTimeout: () {
-        print('검색 타임아웃: $query');
-        _searchCompleters.remove(searchId);
-        return [];
-      });
+        // URL에 쿼리 파라미터 추가
+        final requestUrl = Uri(scheme: url.scheme, host: url.host, path: url.path, queryParameters: {...url.queryParameters, ...params});
 
-      return results;
+        print('TMap 위치 검색 API 호출: $requestUrl');
+
+        // API 요청 보내기
+        final response = await client.get(requestUrl, headers: headers);
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+
+          // 결과 데이터 파싱
+          final results = <Map<String, dynamic>>[];
+
+          if (data['searchPoiInfo'] != null && data['searchPoiInfo']['pois'] != null && data['searchPoiInfo']['pois']['poi'] != null) {
+            final pois = data['searchPoiInfo']['pois']['poi'] as List;
+
+            for (var poi in pois) {
+              // 좌표 추출 (이미 WGS84GEO 좌표계로 요청했으므로 변환 불필요)
+              final lat = double.tryParse(poi['noorLat'] ?? '0') ?? 0.0;
+              final lng = double.tryParse(poi['noorLon'] ?? '0') ?? 0.0;
+
+              results.add({'id': poi['id'] ?? '', 'name': poi['name'] ?? '', 'lat': lat, 'lng': lng, 'distance': double.tryParse(poi['radius'] ?? '0') ?? 0.0});
+            }
+          }
+
+          print('위치 검색 결과: ${results.length}개 항목');
+          return results;
+        } else {
+          print('TMap API 오류: ${response.statusCode}, ${response.body}');
+          return [];
+        }
+      } finally {
+        client.close();
+      }
     } catch (e) {
       print('위치 검색 오류: $e');
       return []; // 오류 발생 시 빈 목록 반환
-    }
-  }
-
-  // 경로 표시 (함수 직접 실행 방식)
-  Future<void> displayRoute(RouteInfo routeInfo) async {
-    try {
-      await waitForInitialization();
-
-      final routeColor = routeInfo.isAM ? '#2196F3' : '#F44336'; // 오전:파란색, 오후:빨간색
-      const routeWidth = 4; // 선 두께
-
-      // 포인트 목록 변환
-      final pointsJson = jsonEncode(routeInfo.points
-          .map((point) => {
-                'lat': point.latitude,
-                'lng': point.longitude,
-              })
-          .toList());
-
-      // 경로선 그리기 - 함수 직접 실행
-      await _controller.executeScript('''
-        try {
-          if (!map) {
-            throw new Error('지도가 초기화되지 않았습니다.');
-          }
-          
-          const coordinates = $pointsJson;
-          
-          // 이미 같은 ID의 경로가 있으면 제거
-          if (routes['${routeInfo.routeId}']) {
-            routes['${routeInfo.routeId}'].setMap(null);
-          }
-          
-          // 경로 좌표 배열 생성
-          const path = coordinates.map(coord => new Tmapv3.LatLng(coord.lat, coord.lng));
-          
-          // 경로선 생성
-          const polyline = new Tmapv3.Polyline({
-            path: path,
-            strokeColor: "$routeColor",
-            strokeWeight: $routeWidth,
-            map: map
-          });
-          
-          // 경로 저장
-          routes['${routeInfo.routeId}'] = polyline;
-          
-          console.log('경로 그리기 성공: ${routeInfo.routeId}, 좌표 수: ' + coordinates.length);
-        } catch (error) {
-          console.error('경로 그리기 오류:', error);
-        }
-      ''');
-
-      // 마커 추가
-      for (var point in routeInfo.points) {
-        await addMarker(point, routeInfo.points.indexOf(point) + 1);
-      }
-    } catch (e) {
-      print('경로 표시 오류: $e');
     }
   }
 
@@ -432,8 +392,6 @@ class TMapService {
     }
 
     try {
-      await waitForInitialization();
-
       // 출발지와 도착지 분리
       RoutePoint startPoint = points.first;
       RoutePoint endPoint = points.last;
@@ -451,7 +409,7 @@ class TMapService {
       // API 요청용 JSON 데이터 생성
       final requestData = {
         "reqCoordType": "WGS84GEO",
-        "resCoordType": "WGS84GEO", // 응답도 WGS84 좌표계로 받기
+        "resCoordType": "WGS84GEO", // 원래 JavaScript에서 사용하던 좌표계
         "startName": startPoint.name,
         "startX": startPoint.longitude.toString(),
         "startY": startPoint.latitude.toString(),
@@ -470,40 +428,120 @@ class TMapService {
             .toList()
       };
 
-      // WebView에서 경로 최적화 API 호출
-      final optimizationId = 'optimization_${DateTime.now().millisecondsSinceEpoch}';
-      final completer = Completer<Map<String, dynamic>>();
+      // HTTP 클라이언트 생성
+      final client = http.Client();
 
-      // Completer 등록
-      _optimizationCompleters[optimizationId] = completer;
+      try {
+        // 정확한 API 엔드포인트 설정 (routeOptimization20)
+        final url = Uri.parse('https://apis.openapi.sk.com/tmap/routes/routeOptimization20?version=1&format=json');
 
-      // 스크립트에 JSON 문자열을 전달하여 실행
-      await _controller.executeScript('''
-        try {
-          optimizeRoute('$optimizationId', ${jsonEncode(requestData)});
-        } catch(error) {
-          console.error('경로 최적화 호출 오류:', error);
-          window.chrome.webview.postMessage({
-            event: 'optimizationComplete',
-            optimizationId: '$optimizationId',
-            error: error.toString()
-          });
+        // 헤더 설정
+        final headers = {'appKey': _tmapClientId, 'Content-Type': 'application/json'};
+
+        print('TMap 경로 최적화 API 호출: $url');
+        print('요청 데이터: ${jsonEncode(requestData)}');
+
+        // POST 요청 전송
+        final response = await client.post(url, headers: headers, body: jsonEncode(requestData));
+
+        if (response.statusCode == 200) {
+          // 응답 JSON 파싱
+          final responseData = jsonDecode(response.body) as Map<String, dynamic>;
+
+          print('경로 최적화 성공: ${response.statusCode}');
+
+          // 최적화된 경로 순서 추출 및 routeManager 업데이트
+          _updateRouteOrder(responseData, points, startPoint, endPoint, viaPoints);
+
+          // 결과 처리 및 경로 그리기
+          await _processRouteOptimizationResult(responseData);
+
+          return responseData;
+        } else {
+          print('TMap API 오류: ${response.statusCode}, ${response.body}');
+          throw Exception('경로 최적화 API 오류: ${response.statusCode}');
         }
-      ''');
-
-      // 최적화 결과 대기 (최대 30초)
-      final resultData = await completer.future.timeout(const Duration(seconds: 30), onTimeout: () {
-        _optimizationCompleters.remove(optimizationId);
-        throw TimeoutException('경로 최적화 시간 초과');
-      });
-
-      // 결과 처리 및 경로 그리기
-      await _processRouteOptimizationResult(resultData);
-
-      return resultData;
+      } finally {
+        client.close();
+      }
     } catch (e) {
       print('경로 최적화 오류: $e');
       throw Exception('경로 최적화 실패: $e');
+    }
+  }
+
+  // 최적화된 경로 순서를 기반으로 RouteManager 업데이트
+  void _updateRouteOrder(Map<String, dynamic> response, List<RoutePoint> originalPoints, RoutePoint startPoint, RoutePoint endPoint, List<RoutePoint> viaPoints) {
+    try {
+      // 응답에서 경로 순서 정보 추출
+      if (response['features'] == null) {
+        print('경로 순서 정보가 없습니다.');
+        return;
+      }
+
+      // Point 타입 피처만 필터링하여 정렬된 포인트 목록 추출
+      final List<Map<String, dynamic>> orderedPoints = [];
+
+      for (var feature in response['features']) {
+        // Point 타입 피처만 선택 (경로점)
+        if (feature['geometry'] != null && feature['geometry']['type'] == 'Point' && feature['properties'] != null) {
+          orderedPoints.add({
+            'index': int.tryParse(feature['properties']['index'].toString()) ?? 9999,
+            'pointType': feature['properties']['pointType'].toString(),
+            'viaPointId': feature['properties']['viaPointId'].toString(),
+            'viaPointName': feature['properties']['viaPointName'].toString()
+          });
+        }
+      }
+
+      // index 기준으로 정렬
+      orderedPoints.sort((a, b) => a['index'].compareTo(b['index']));
+
+      print('최적화된 경로 순서: ${orderedPoints.map((p) => '${p['index']}: ${p['viaPointName']}').join(' -> ')}');
+
+      // 새로운 순서대로 RoutePoint 목록 생성
+      final List<RoutePoint> reorderedPoints = [];
+
+      for (var point in orderedPoints) {
+        final String viaPointId = point['viaPointId'].toString();
+        final String pointType = point['pointType'].toString();
+
+        RoutePoint? routePoint;
+
+        // 시작점
+        if (pointType == 'S') {
+          routePoint = startPoint;
+        }
+        // 도착점
+        else if (pointType == 'E') {
+          routePoint = endPoint;
+        }
+        // 경유지 (B1, B2, B3 등)
+        else if (pointType.startsWith('B') && viaPointId.isNotEmpty) {
+          // ID로 경유지 찾기
+          routePoint = viaPoints.firstWhere(
+            (p) => p.id == viaPointId,
+          );
+        }
+
+        if (routePoint != null) {
+          reorderedPoints.add(routePoint);
+        } else {
+          print('경고: ID: $viaPointId, 타입: $pointType에 해당하는 RoutePoint를 찾을 수 없습니다.');
+        }
+      }
+
+      if (reorderedPoints.isNotEmpty) {
+        // RouteManager 경로 순서 업데이트
+        final routeManager = Get.find<RouteManager>();
+        routeManager.updateRoutePoints(reorderedPoints);
+
+        print('RouteManager 경로 순서가 업데이트되었습니다. 총 ${reorderedPoints.length}개 포인트');
+      } else {
+        print('경로 포인트를 찾을 수 없어 순서를 업데이트하지 않았습니다.');
+      }
+    } catch (e) {
+      print('경로 순서 업데이트 중 오류 발생: $e');
     }
   }
 
@@ -530,6 +568,9 @@ class TMapService {
       // 최적화된 순서대로 경로 정보 생성
       List<List<Map<String, double>>> allCoordinates = [];
 
+      // 경로 좌표를 RouteManager에 저장하기 위한 좌표 목록
+      List<List<double>> routeManagerCoordinates = [];
+
       // 경로 세그먼트 추출
       for (var feature in features) {
         final geometry = feature['geometry'];
@@ -554,6 +595,9 @@ class TMapService {
               'lat': coord[1].toDouble(),
               'lng': coord[0].toDouble(),
             });
+
+            // RouteManager용 좌표 배열에도 추가 (경도, 위도 순서)
+            routeManagerCoordinates.add([coord[0].toDouble(), coord[1].toDouble()]);
           }
 
           allCoordinates.add(pathCoordinates);
@@ -565,9 +609,6 @@ class TMapService {
         final pathCoordinates = allCoordinates[i];
         final routeId = 'optimized_route_$i';
 
-        // 경로 색상 랜덤 생성 (구간별 구분을 위해)
-        final color = '#${((1 << 24) * (Random().nextDouble())).floor().toRadixString(16).padLeft(6, '0')}';
-
         // 지도에 경로 그리기
         await _controller.executeScript('''
           try {
@@ -577,8 +618,8 @@ class TMapService {
             
             const polyline = new Tmapv3.Polyline({
               path: path,
-              strokeColor: "$color",
-              strokeWeight: 5,
+              strokeColor: "#dd00dd",
+              strokeWeight: 6,
               map: map
             });
             
@@ -590,10 +631,37 @@ class TMapService {
         ''');
       }
 
-      // 총 거리, 시간, 요금 정보 콘솔에 출력
-      final totalDistance = (properties['totalDistance'] / 1000).toStringAsFixed(1);
-      final totalTime = (properties['totalTime'] / 60).toStringAsFixed(0);
-      final totalFare = properties['totalFare'];
+      // RouteManager에 경로 좌표 저장
+      if (routeManagerCoordinates.isNotEmpty) {
+        // 최적화 요청에 사용된 경로점에서 차량 ID 추출
+        final routeManager = Get.find<RouteManager>();
+
+        // RouteManager의 현재 활성 차량 찾기
+        int activeVehicleId = 0;
+
+        // 현재 RouteManager가 가지고 있는 경로점에서 첫 번째 점의 ID에서 차량 ID 추출
+        final routePoints = routeManager.allRoutes.isNotEmpty ? routeManager.allRoutes.first.points : [];
+
+        if (routePoints.isNotEmpty && routePoints.first.id.contains('_')) {
+          final idParts = routePoints.first.id.split('_');
+          if (idParts.length > 1) {
+            activeVehicleId = int.tryParse(idParts[1]) ?? 0;
+          }
+        }
+
+        // 차량 ID가 유효하면 경로 좌표 업데이트
+        if (activeVehicleId > 0) {
+          routeManager.updateRouteCoordinates(activeVehicleId, routeManagerCoordinates);
+          print('RouteManager에 경로 좌표 저장 완료: 차량 ID $activeVehicleId, 좌표 수: ${routeManagerCoordinates.length}');
+        } else {
+          print('경로 좌표를 저장할 차량 ID를 찾을 수 없습니다.');
+        }
+      }
+
+      // properties에서 값 추출 후 적절한 타입으로 파싱
+      final totalDistance = double.parse((double.parse(properties['totalDistance'].toString()) / 1000).toStringAsFixed(1));
+      final totalTime = int.parse((double.parse(properties['totalTime'].toString()) / 60).toStringAsFixed(0));
+      final totalFare = int.parse(properties['totalFare'].toString());
 
       print('경로 최적화 완료: 총 거리 ${totalDistance}km, 총 시간 $totalTime분, 총 요금 $totalFare원');
 
@@ -620,58 +688,21 @@ class TMapService {
       _isControllerInitialized = false;
       _messageSubscription?.cancel();
       _messageController.close();
-      _searchCompleters.clear();
       _optimizationCompleters.clear();
     } catch (e) {
       print('WebView 종료 오류: $e');
     }
   }
 
-  // 검색 완료 이벤트 처리 메서드
-  void _handleSearchComplete(Map<String, dynamic> data) {
-    final searchId = data['searchId'] as String?;
-
-    print('검색 완료 이벤트 수신: (ID: $searchId)');
-
-    // 해당 검색 ID에 대한 completer 찾기
-    final completer = _searchCompleters[searchId];
-    if (completer != null && !completer.isCompleted) {
-      if (data['error'] != null) {
-        print('검색 오류: ${data['error']}');
-        completer.complete([]);
-      } else {
-        // 결과 변환
-        final results = (data['results'] as List?)?.map((item) {
-              return Map<String, dynamic>.from(item);
-            }).toList() ??
-            [];
-
-        print('검색 결과 수신: ${results.length}개 항목');
-        completer.complete(results);
+  // 모든 경로 지우기
+  Future<void> clearAllRoutes() async {
+    await _controller.executeScript('''
+      // 기존 경로 제거
+      for (const id in routes) {
+        routes[id].setMap(null);
       }
-      // 완료된 completer 제거
-      _searchCompleters.remove(searchId);
-    }
-  }
-
-  // 경로 최적화 완료 이벤트 처리 메서드
-  void _handleOptimizationComplete(Map<String, dynamic> data) {
-    final optimizationId = data['optimizationId'] as String?;
-
-    print('경로 최적화 완료 이벤트 수신: (ID: $optimizationId)');
-
-    // 해당 최적화 ID에 대한 completer 찾기
-    final completer = _optimizationCompleters[optimizationId];
-    if (completer != null && !completer.isCompleted) {
-      if (data['error'] != null) {
-        print('최적화 오류: ${data['error']}');
-        completer.completeError(data['error']);
-      } else {
-        completer.complete(data['result']);
-      }
-      // 완료된 completer 제거
-      _optimizationCompleters.remove(optimizationId);
-    }
+      routes = {};
+    ''');
   }
 }
 
