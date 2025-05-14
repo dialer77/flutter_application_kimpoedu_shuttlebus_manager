@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter_application_kimpoedu_shuttlebus_manager/constants/enum_types.dart';
+
 import '../models/route_info.dart';
 import '../models/route_point.dart';
 
@@ -49,29 +51,8 @@ class RouteManager {
     return route;
   }
 
-  // 경로 삭제
-  bool removeRoute(int routeId) {
-    final index = _routes.indexWhere((route) => route.routeId == routeId);
-    if (index >= 0) {
-      _routes.removeAt(index);
-      return true;
-    }
-    return false;
-  }
-
-  // 경로 상태 변경 (활성/비활성)
-  bool toggleRouteStatus(int routeId) {
-    final route = _routes.firstWhere(
-      (route) => route.routeId == routeId,
-      orElse: () => throw Exception('Route not found'),
-    );
-
-    route.isActive = !route.isActive;
-    return route.isActive;
-  }
-
   // 모든 경로 초기화
-  void clearAllRoutes() {
+  void _clearAllRoutes() {
     _routes.clear();
     _nextRouteId = 1;
   }
@@ -126,10 +107,10 @@ class RouteManager {
           address: point.address,
           latitude: point.latitude,
           longitude: point.longitude,
-          type: 'start', // 첫 번째 포인트는 시작 지점으로 설정
+          type: PointType.start, // 첫 번째 포인트는 시작 지점으로 설정
           sequence: 1);
 
-      final newRoute = addRoute(
+      addRoute(
         vehicleId: vehicleId,
         isAM: currentIsAM, // 현재 선택된 시간대(오전/오후)
         points: [newPoint],
@@ -143,36 +124,35 @@ class RouteManager {
       if (route.points.isEmpty) {
         // 첫 번째 포인트라면 시작 지점으로 설정
         final newPoint = RoutePoint(
-            id: point.id,
-            name: point.name,
-            address: point.address,
-            latitude: point.latitude,
-            longitude: point.longitude,
-            type: 'start', // 시작 지점
+            id: route.points.first.id,
+            name: route.points.first.name,
+            address: route.points.first.address,
+            latitude: route.points.first.latitude,
+            longitude: route.points.first.longitude,
+            type: PointType.start, // 시작 지점
             sequence: 1);
         route.points.add(newPoint);
       } else {
-        // 이미 포인트가 있는 경우
-        // 마지막 포인트가 종료 지점으로 설정되어 있었다면 일반 경유지로 변경
-        if (route.points.last.type == 'end') {
+        // end 포인트가 없으면 end 포인트로 설정
+        if (route.points.where((point) => point.type == PointType.end).isEmpty) {
           route.points.last = RoutePoint(
               id: route.points.last.id,
               name: route.points.last.name,
               address: route.points.last.address,
               latitude: route.points.last.latitude,
               longitude: route.points.last.longitude,
-              type: 'waypoint', // 경유지로 변경
+              type: PointType.end, // 종료 지점
               sequence: route.points.last.sequence);
         }
 
-        // 새 포인트는 종료 지점으로 설정
+        // 새 포인트는 일반경유지 지점으로 설정
         final newPoint = RoutePoint(
             id: point.id,
             name: point.name,
             address: point.address,
             latitude: point.latitude,
             longitude: point.longitude,
-            type: 'end', // 종료 지점
+            type: PointType.waypoint, // 경유지
             sequence: route.points.length + 1);
         route.points.add(newPoint);
       }
@@ -196,26 +176,27 @@ class RouteManager {
     final points = route.points;
 
     // 첫 번째 지점을 시작 지점으로 설정
-    if (points.isNotEmpty && points.first.type != 'start') {
+    if (points.isNotEmpty && points.first.type != PointType.start) {
       points[0] = RoutePoint(
           id: points.first.id,
           name: points.first.name,
           address: points.first.address,
           latitude: points.first.latitude,
           longitude: points.first.longitude,
-          type: 'start', // 시작 지점
+          type: PointType.start, // 시작 지점
           sequence: points.first.sequence);
     }
 
     // 마지막 지점을 종료 지점으로 설정
-    if (points.length > 1 && points.last.type != 'end') {
+    // end 포인트가 없으면 end 포인트로 설정
+    if (points.length > 1 && points.where((point) => point.type == PointType.end).isEmpty) {
       points[points.length - 1] = RoutePoint(
           id: points.last.id,
           name: points.last.name,
           address: points.last.address,
           latitude: points.last.latitude,
           longitude: points.last.longitude,
-          type: 'end', // 종료 지점
+          type: PointType.end, // 종료 지점
           sequence: points.last.sequence);
     }
   }
@@ -265,7 +246,7 @@ class RouteManager {
           address: lastPoint.address,
           latitude: lastPoint.latitude,
           longitude: lastPoint.longitude,
-          type: 'end', // 종료 지점으로 설정
+          type: PointType.end, // 종료 지점으로 설정
           sequence: lastPoint.sequence);
     }
 
@@ -281,7 +262,7 @@ class RouteManager {
     final points = getRoutePoints(vehicleId, isAM: currentIsAM);
 
     for (final point in points) {
-      if (point.type == 'start') {
+      if (point.type == PointType.start) {
         return point;
       }
     }
@@ -296,7 +277,7 @@ class RouteManager {
     final points = getRoutePoints(vehicleId, isAM: currentIsAM);
 
     for (final point in points) {
-      if (point.type == 'end') {
+      if (point.type == PointType.end) {
         return point;
       }
     }
@@ -316,7 +297,7 @@ class RouteManager {
 
     // 먼저 기존 시작 지점이 있으면 경유지로 변경
     for (int i = 0; i < route.points.length; i++) {
-      if (route.points[i].type == 'start' && i != pointIndex) {
+      if (route.points[i].type == PointType.start && i != pointIndex) {
         final point = route.points[i];
         route.points[i] = RoutePoint(
             id: point.id,
@@ -324,7 +305,7 @@ class RouteManager {
             address: point.address,
             latitude: point.latitude,
             longitude: point.longitude,
-            type: 'waypoint', // 경유지로 변경
+            type: PointType.waypoint, // 경유지로 변경
             sequence: point.sequence);
       }
     }
@@ -337,7 +318,7 @@ class RouteManager {
         address: point.address,
         latitude: point.latitude,
         longitude: point.longitude,
-        type: 'start', // 시작 지점으로 설정
+        type: PointType.start, // 시작 지점으로 설정
         sequence: point.sequence);
 
     return true;
@@ -354,7 +335,7 @@ class RouteManager {
 
     // 먼저 기존 종료 지점이 있으면 경유지로 변경
     for (int i = 0; i < route.points.length; i++) {
-      if (route.points[i].type == 'end' && i != pointIndex) {
+      if (route.points[i].type == PointType.end && i != pointIndex) {
         final point = route.points[i];
         route.points[i] = RoutePoint(
             id: point.id,
@@ -362,7 +343,7 @@ class RouteManager {
             address: point.address,
             latitude: point.latitude,
             longitude: point.longitude,
-            type: 'waypoint', // 경유지로 변경
+            type: PointType.waypoint, // 경유지로 변경
             sequence: point.sequence);
       }
     }
@@ -375,79 +356,8 @@ class RouteManager {
         address: point.address,
         latitude: point.latitude,
         longitude: point.longitude,
-        type: 'end', // 종료 지점으로 설정
+        type: PointType.end, // 종료 지점으로 설정
         sequence: point.sequence);
-
-    return true;
-  }
-
-  // 경로 순서 최적화 (시작 지점에서 종료 지점까지)
-  bool optimizeRoute(int vehicleId, {bool? isAM}) {
-    final currentIsAM = isAM ?? _currentIsAM;
-    final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
-
-    if (routes.isEmpty || routes.first.points.length < 3) {
-      // 최소 3개 이상의 지점이 있어야 최적화 가능
-      return false;
-    }
-
-    final route = routes.first;
-    final startPoint = getStartPoint(vehicleId, isAM: currentIsAM);
-    final endPoint = getEndPoint(vehicleId, isAM: currentIsAM);
-
-    if (startPoint == null || endPoint == null) {
-      return false;
-    }
-
-    // 시작과 종료 지점을 제외한 경유지만 추출
-    final waypoints = route.points.where((p) => p.type != 'start' && p.type != 'end').toList();
-
-    if (waypoints.isEmpty) {
-      // 경유지가 없으면 최적화할 필요 없음
-      return true;
-    }
-
-    // 경유지를 거리에 따라 정렬 (간단한 최근접 이웃 알고리즘)
-    List<RoutePoint> sortedWaypoints = [];
-    List<RoutePoint> remainingWaypoints = List.from(waypoints);
-
-    // 시작 지점부터 시작
-    RoutePoint current = startPoint;
-
-    while (remainingWaypoints.isNotEmpty) {
-      // 현재 지점에서 가장 가까운 다음 지점 찾기
-      int nearestIndex = 0;
-      double minDistance = double.infinity;
-
-      for (int i = 0; i < remainingWaypoints.length; i++) {
-        final distance = _calculateDistance(current.latitude, current.longitude, remainingWaypoints[i].latitude, remainingWaypoints[i].longitude);
-
-        if (distance < minDistance) {
-          minDistance = distance;
-          nearestIndex = i;
-        }
-      }
-
-      // 가장 가까운 지점을 경로에 추가
-      current = remainingWaypoints[nearestIndex];
-      sortedWaypoints.add(current);
-      remainingWaypoints.removeAt(nearestIndex);
-    }
-
-    // 최적화된 경로로 기존 경로 대체
-    route.points.clear();
-    route.points.add(startPoint); // 시작 지점
-    route.points.addAll(sortedWaypoints); // 정렬된 경유지
-    route.points.add(endPoint); // 종료 지점
-
-    // 시퀀스 번호 업데이트
-    for (int i = 0; i < route.points.length; i++) {
-      final point = route.points[i];
-      route.points[i] = RoutePoint(id: point.id, name: point.name, address: point.address, latitude: point.latitude, longitude: point.longitude, type: point.type, sequence: i + 1);
-    }
-
-    // 거리 및 시간 재계산
-    _recalculateRouteInfo(route);
 
     return true;
   }
@@ -560,7 +470,7 @@ class RouteManager {
                         'latitude': point.latitude,
                         'longitude': point.longitude,
                         'address': point.address,
-                        'type': point.type,
+                        'type': point.type.toValue(),
                         'sequence': point.sequence,
                       })
                   .toList(),
@@ -582,7 +492,7 @@ class RouteManager {
   // JSON에서 경로 데이터 가져오기
   void importFromJson(Map<String, dynamic> json) {
     // 기존 데이터 초기화
-    clearAllRoutes();
+    _clearAllRoutes();
 
     // 라우트 ID 설정
     if (json.containsKey('nextRouteId')) {
@@ -607,19 +517,19 @@ class RouteManager {
               latitude: pointJson['latitude'],
               longitude: pointJson['longitude'],
               address: pointJson['address'],
-              type: pointJson['type'],
+              type: PointTypeExtension.fromValue(pointJson['type']),
               sequence: pointJson['sequence'] ?? 0,
             ));
           }
         }
 
         // 경로 좌표 로드
-        List<List<double>> coordinates = [];
+        List<List<List<double>>> coordinates = [];
         if (routeJson.containsKey('coordinates')) {
           final coordsJson = routeJson['coordinates'] as List;
           for (var coord in coordsJson) {
             if (coord is List) {
-              coordinates.add(coord.map<double>((e) => e is num ? e.toDouble() : 0.0).toList());
+              coordinates.add(coord.map<List<double>>((e) => e is List ? e.map<double>((f) => f is num ? f.toDouble() : 0.0).toList() : []).toList());
             }
           }
         }
@@ -643,16 +553,21 @@ class RouteManager {
 
   // 특정 차량 ID의 모든 경로 제거
   void removeVehicle(int vehicleId) {
+    // 지정된 vehicleId의 경로 제거
     _routes.removeWhere((route) => route.vehicleId == vehicleId);
+
+    // 나머지 차량의 ID 재배열 - vehicleId보다 큰 ID를 가진 모든 차량의 ID를 1씩 감소
+    for (var route in _routes) {
+      if (route.vehicleId > vehicleId) {
+        route.vehicleId -= 1;
+      }
+    }
 
     // 나머지 차량에 대한 경로가 있는지 확인하고 필요한 경우 생성
     final remainingVehicleIds = <int>{};
     for (final route in _routes) {
       remainingVehicleIds.add(route.vehicleId);
     }
-
-    // 차량 ID 정렬 (순서대로)
-    final sortedVehicleIds = remainingVehicleIds.toList()..sort();
   }
 
   // 현재 시간대(오전/오후)에 맞는 경로 가져오기
@@ -727,23 +642,20 @@ class RouteManager {
       // 경로 정보 재계산
       _recalculateRouteInfo(route);
     }
-
-    print('차량 ID $targetVehicleId의 경로 포인트가 업데이트되었습니다. 포인트 수: ${route.points.length}');
   }
 
   // 경로 선 좌표 업데이트 - 단순화된 버전
-  void updateRouteCoordinates(int vehicleId, List<List<double>> coordinates, {bool? isAM}) {
+  void updateRouteSegments(int vehicleId, List<List<List<double>>> coordinates, {bool? isAM}) {
     final currentIsAM = isAM ?? _currentIsAM;
     final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
 
     if (routes.isNotEmpty) {
       routes.first.coordinates = coordinates;
-      print('차량 ID $vehicleId의 경로 좌표가 업데이트되었습니다. 좌표 수: ${coordinates.length}');
     }
   }
 
   // 경로 선 좌표 가져오기 - 단순화된 버전
-  List<List<double>> getRouteCoordinates(int vehicleId, {bool? isAM}) {
+  List<List<List<double>>> getRouteCoordinates(int vehicleId, {bool? isAM}) {
     final currentIsAM = isAM ?? _currentIsAM;
     final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
 

@@ -1,3 +1,5 @@
+import '../constants/enum_types.dart'; // Enum 타입 import
+
 // 경로 포인트 클래스
 class RoutePoint {
   final String id; // 고유 식별자
@@ -5,7 +7,7 @@ class RoutePoint {
   final double latitude;
   final double longitude;
   final String address; // 주소 (null 허용하지 않음)
-  final String type; // 포인트 유형 (start, waypoint, end)
+  final PointType type; // 포인트 유형 (Enum 타입으로 변경)
   final int sequence; // 경로 내 순서
 
   RoutePoint({
@@ -26,7 +28,7 @@ class RoutePoint {
       'lat': latitude,
       'lng': longitude,
       'address': address,
-      'type': type,
+      'type': type.toValue(), // Enum을 String으로 변환
       'sequence': sequence,
     };
   }
@@ -39,7 +41,7 @@ class RoutePoint {
       latitude: json['lat'],
       longitude: json['lng'],
       address: json['address'] ?? '',
-      type: json['type'],
+      type: PointTypeExtension.fromValue(json['type']), // String을 Enum으로 변환
       sequence: json['sequence'] ?? 0,
     );
   }
@@ -51,7 +53,7 @@ class RoutePoint {
     double? latitude,
     double? longitude,
     String? address,
-    String? type,
+    PointType? type,
     int? sequence,
   }) {
     return RoutePoint(
@@ -65,6 +67,3 @@ class RoutePoint {
     );
   }
 }
-
-// 포인트 유형 열거형
-enum PointType { start, waypoint, end }

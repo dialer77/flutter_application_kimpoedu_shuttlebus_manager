@@ -136,6 +136,14 @@
                 routes = {};
             }
 
+
+            function getCurrentMapCenter() {
+                sendMessageToFlutter({
+                    event: 'getCurrentMapCenter',
+                    status: 'success',
+                    data: map.getCenter()
+                });
+            }
             
             function sendMessageToFlutter(data) {
                 window.chrome.webview.postMessage(JSON.stringify(data));

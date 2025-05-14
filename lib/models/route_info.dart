@@ -3,14 +3,14 @@ import 'route_point.dart';
 // 경로 정보를 저장하는 클래스
 class RouteInfo {
   final int routeId;
-  final int vehicleId;
+  int vehicleId;
   bool isAM;
   final List<RoutePoint> points;
   double totalDistance;
   int estimatedTime;
   bool isActive; // 경로 활성화 상태
   final DateTime createdAt;
-  List<List<double>> coordinates = []; // 경로 선 좌표 추가
+  List<List<List<double>>> coordinates = []; // 경로 선 좌표 추가
 
   RouteInfo({
     required this.routeId,
@@ -21,7 +21,7 @@ class RouteInfo {
     required this.estimatedTime,
     DateTime? createdAt,
     this.isActive = true, // 기본값은 활성화 상태
-    List<List<double>>? coordinates,
+    List<List<List<double>>>? coordinates,
   })  : createdAt = createdAt ?? DateTime.now(),
         coordinates = coordinates ?? [];
 
@@ -82,12 +82,12 @@ class RouteInfo {
 
   // JSON에서 생성
   factory RouteInfo.fromJson(Map<String, dynamic> json) {
-    List<List<double>> coords = [];
+    List<List<List<double>>> coords = [];
     if (json.containsKey('coordinates')) {
       final coordsData = json['coordinates'] as List;
       for (var coord in coordsData) {
         if (coord is List) {
-          coords.add(coord.map<double>((e) => e is num ? e.toDouble() : 0.0).toList());
+          coords.add(coord.map<List<double>>((e) => e is List ? e.map<double>((f) => f is num ? f.toDouble() : 0.0).toList() : []).toList());
         }
       }
     }
