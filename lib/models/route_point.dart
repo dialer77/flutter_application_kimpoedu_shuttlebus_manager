@@ -4,11 +4,11 @@ import '../constants/enum_types.dart'; // Enum 타입 import
 class RoutePoint {
   final String id; // 고유 식별자
   final String name; // 장소명
-  final double latitude;
-  final double longitude;
+  double latitude;
+  double longitude;
   final String address; // 주소 (null 허용하지 않음)
   final PointType type; // 포인트 유형 (Enum 타입으로 변경)
-  final int sequence; // 경로 내 순서
+  int sequence; // 경로 내 순서
 
   RoutePoint({
     required this.id,
@@ -19,6 +19,11 @@ class RoutePoint {
     required this.type,
     required this.sequence,
   });
+
+  updatePoint(double latitude, double longitude) {
+    this.latitude = latitude;
+    this.longitude = longitude;
+  }
 
   // JSON 변환 메서드
   Map<String, dynamic> toJson() {

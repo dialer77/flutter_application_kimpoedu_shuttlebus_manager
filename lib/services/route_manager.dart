@@ -39,7 +39,6 @@ class RouteManager {
     required int estimatedTime,
   }) {
     final route = RouteInfo(
-      routeId: _nextRouteId++,
       vehicleId: vehicleId,
       isAM: isAM,
       points: points,
@@ -90,7 +89,7 @@ class RouteManager {
   }
 
   // 차량 경로에 포인트 추가 (시간대 고려하도록 수정)
-  void addRoutePoint(int vehicleId, RoutePoint point, {bool? isAM}) {
+  void addRoutePoint(int vehicleId, RoutePoint point, {bool? isAM, String? name}) {
     // isAM이 제공되면 해당 시간대의 경로만 확인, 아니면 현재 선택된 시간대
     final currentIsAM = isAM ?? _currentIsAM;
 
@@ -124,11 +123,11 @@ class RouteManager {
       if (route.points.isEmpty) {
         // 첫 번째 포인트라면 시작 지점으로 설정
         final newPoint = RoutePoint(
-            id: route.points.first.id,
-            name: route.points.first.name,
-            address: route.points.first.address,
-            latitude: route.points.first.latitude,
-            longitude: route.points.first.longitude,
+            id: point.id,
+            name: point.name,
+            address: point.address,
+            latitude: point.latitude,
+            longitude: point.longitude,
             type: PointType.start, // 시작 지점
             sequence: 1);
         route.points.add(newPoint);
@@ -437,7 +436,7 @@ class RouteManager {
   }
 
   // 특정 경로 가져오기 (없으면 생성)
-  RouteInfo getOrCreateRoute(int vehicleId, bool isAM) {
+  RouteInfo getOrCreateRoute(int vehicleId, bool isAM, {String? name}) {
     // 해당 차량의 경로 찾기
     final routes = getRoutesByVehicle(vehicleId);
 
@@ -460,7 +459,6 @@ class RouteManager {
   Map<String, dynamic> exportToJson() {
     final routesJson = _routes
         .map((route) => {
-              'routeId': route.routeId,
               'vehicleId': route.vehicleId,
               'isAM': route.isAM,
               'points': route.points
@@ -536,7 +534,6 @@ class RouteManager {
 
         // 경로 추가
         final route = RouteInfo(
-          routeId: routeJson['routeId'],
           vehicleId: routeJson['vehicleId'],
           isAM: routeJson['isAM'],
           points: points,
@@ -553,21 +550,7 @@ class RouteManager {
 
   // 특정 차량 ID의 모든 경로 제거
   void removeVehicle(int vehicleId) {
-    // 지정된 vehicleId의 경로 제거
     _routes.removeWhere((route) => route.vehicleId == vehicleId);
-
-    // 나머지 차량의 ID 재배열 - vehicleId보다 큰 ID를 가진 모든 차량의 ID를 1씩 감소
-    for (var route in _routes) {
-      if (route.vehicleId > vehicleId) {
-        route.vehicleId -= 1;
-      }
-    }
-
-    // 나머지 차량에 대한 경로가 있는지 확인하고 필요한 경우 생성
-    final remainingVehicleIds = <int>{};
-    for (final route in _routes) {
-      remainingVehicleIds.add(route.vehicleId);
-    }
   }
 
   // 현재 시간대(오전/오후)에 맞는 경로 가져오기
@@ -586,7 +569,7 @@ class RouteManager {
   bool get currentIsAM => _currentIsAM;
 
   // 경로의 전체 포인트 목록 업데이트
-  void updateRoutePoints(List<RoutePoint> newPoints, {int? vehicleId, bool? isAM}) {
+  void updateRoutePoints(List<RoutePoint> newPoints, {int? vehicleId, bool? isAM, String? name}) {
     // 경로 업데이트를 적용할 차량 ID 결정
     final targetVehicleId = vehicleId ?? (newPoints.isNotEmpty ? int.tryParse(newPoints.first.id.split('_')[1]) ?? 0 : 0);
 
@@ -663,5 +646,59 @@ class RouteManager {
       return routes.first.coordinates;
     }
     return [];
+  }
+
+  // 경로점 순서 변경
+  void reorderRoutePoint(int vehicleId, int oldIndex, int newIndex) {
+    final routes = getRoutesByVehicle(vehicleId);
+    if (routes.isEmpty) return;
+
+    final routePoints = routes.first.points;
+
+    // 순서 변경
+    if (oldIndex < newIndex) {
+      // 아래로 이동할 때
+      final point = routePoints.removeAt(oldIndex);
+      routePoints.insert(newIndex, point);
+    } else {
+      // 위로 이동할 때
+      final point = routePoints.removeAt(oldIndex);
+      routePoints.insert(newIndex, point);
+    }
+
+    // 시퀀스 번호 업데이트
+    for (int i = 0; i < routePoints.length; i++) {
+      routePoints[i].sequence = i + 1;
+    }
+  }
+
+  /// 경로 요약 정보(총 거리, 예상 시간) 업데이트
+  void updateRouteSummary({required int vehicleId, required double totalDistance, required int estimatedTime}) {
+    try {
+      // 해당 차량의 경로 객체 찾기
+      final vehicleRouteIndex = allRoutes.indexWhere((route) => route.vehicleId == vehicleId);
+
+      if (vehicleRouteIndex != -1) {
+        // 경로가 존재하면 업데이트
+        final route = allRoutes[vehicleRouteIndex];
+
+        // 새로운 객체로 업데이트 (불변성 유지)
+        allRoutes[vehicleRouteIndex] = RouteInfo(
+          vehicleId: route.vehicleId,
+          isAM: route.isAM,
+          points: route.points,
+          totalDistance: totalDistance,
+          estimatedTime: estimatedTime,
+          isActive: route.isActive,
+          coordinates: route.coordinates,
+        );
+
+        print('경로 요약 정보 업데이트: 차량 $vehicleId, 거리: $totalDistance km, 소요시간: $estimatedTime 분');
+      } else {
+        print('경로 요약 정보 업데이트 실패: 차량 $vehicleId에 대한 경로가 없습니다.');
+      }
+    } catch (e) {
+      print('경로 요약 정보 업데이트 오류: $e');
+    }
   }
 }

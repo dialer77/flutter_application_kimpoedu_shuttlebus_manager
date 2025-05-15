@@ -23,6 +23,7 @@ dependencies:
   shelf: ^1.4.1
   shelf_static: ^1.1.2
   window_manager: ^0.4.3
+  msix: ^3.16.9
 
 dev_dependencies:
   flutter_test:

@@ -2,7 +2,6 @@ import 'route_point.dart';
 
 // 경로 정보를 저장하는 클래스
 class RouteInfo {
-  final int routeId;
   int vehicleId;
   bool isAM;
   final List<RoutePoint> points;
@@ -13,7 +12,6 @@ class RouteInfo {
   List<List<List<double>>> coordinates = []; // 경로 선 좌표 추가
 
   RouteInfo({
-    required this.routeId,
     required this.vehicleId,
     required this.isAM,
     required this.points,
@@ -37,7 +35,7 @@ class RouteInfo {
   // 관련 정보를 문자열로 변환
   @override
   String toString() {
-    return '경로 ID: $routeId, 차량: $vehicleId호차, 시간대: ${isAM ? '오전' : '오후'}, '
+    return '차량: ${vehicleId + 1}호차, 시간대: ${isAM ? '오전' : '오후'}, '
         '거리: ${totalDistance.toStringAsFixed(1)}km, 예상 시간: $estimatedTime분';
   }
 
@@ -69,7 +67,6 @@ class RouteInfo {
   // JSON 변환
   Map<String, dynamic> toJson() {
     return {
-      'routeId': routeId,
       'vehicleId': vehicleId,
       'isAM': isAM,
       'points': points.map((p) => p.toJson()).toList(),
@@ -93,7 +90,6 @@ class RouteInfo {
     }
 
     return RouteInfo(
-      routeId: json['routeId'],
       vehicleId: json['vehicleId'],
       isAM: json['isAM'],
       points: (json['points'] as List).map((p) => RoutePoint.fromJson(p)).toList(),

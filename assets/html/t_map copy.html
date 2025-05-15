@@ -3,7 +3,7 @@
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
         <title>TMap</title>
-        <script src="https://apis.openapi.sk.com/tmap/vectorjs?version=1&appKey=APP_KEY"></script>
+        <script src="https://apis.openapi.sk.com/tmap/vectorjs?version=1&appKey=Q1uUmMkXdl4Rovxy40R2N1AGEj9OUMn51TvUHXP8"></script>
         <style>
             body, html { 
                 margin: 0; 
@@ -24,14 +24,14 @@
 
             var map;
             var markers = {};
-            var polylineRoutes = {};
+            var polylineRoutes = [];
             // 페이지가 로딩이 된 후 호출하는 함수입니다.
             function initTmap(){
                 // 기본 변수 초기화
                 window.map = null;
                 window.infoWindow = null;
                 window.markers = {};
-                window.polylineRoutes = {};
+                window.polylineRoutes = [];
                 
                 try {
                     // map 생성
@@ -115,7 +115,7 @@
             }
             
             // 경로 그리기 함수
-            function drawRoute(route, color) {
+            function drawRoute(id, route, color) {
                 var polyline = new Tmapv3.Polyline({
 						path : route,
 						strokeColor : color,

@@ -1,0 +1,20 @@
+msix_config:
+  display_name: Route Manager
+  publisher_display_name: yong
+  identity_name: com.yong.routemanager
+  publisher: CN=00000000-0000-0000-0000-000000000000
+  msix_version: 1.0.0.0
+  logo_path: assets/logo.png
+  capabilities: internetClient
+  store: false
+  install_certificate: true
+  certificate_path: auto
+  certificate_password: auto
+  architecture: x64
+  output_name: RouteManager
+  output_path: build/windows/msix
+  languages: ko-kr
+  start_menu_icon: true
+  desktop_icon: true
+  build_windows: true
+  sign_msix: true
