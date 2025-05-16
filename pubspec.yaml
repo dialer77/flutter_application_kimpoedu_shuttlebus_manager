@@ -35,3 +35,25 @@ flutter:
   assets:
     - assets/config/ # 인증 설정 파일을 포함하도록 assets 등록
     - assets/html/
+    - assets/icon.png
+
+msix_config:
+  display_name: Route Manager
+  publisher_display_name: yong
+  identity_name: com.yong.routemanager
+  publisher: CN=RouteManager
+  msix_version: 1.0.0.0
+  logo_path: assets/icon.png
+  capabilities: internetClient
+  store: false
+  install_certificate: true
+  certificate_path: D:\certificates\RouteManagerCert.pfx
+  certificate_password: password123
+  architecture: x64
+  output_name: RouteManager
+  output_path: D:/build/windows/msix
+  languages: ko-kr
+  start_menu_icon: true
+  desktop_icon: true
+  build_windows: true
+  sign_msix: true

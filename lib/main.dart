@@ -113,6 +113,18 @@ void main() async {
     print('설정 또는 경로 데이터 로드 오류: $e');
   }
 
+  // 로드 실패 또는 경로가 하나도 없는 경우 기본 경로 추가
+  if (routeManager.allRoutes.isEmpty) {
+    print('경로가 없습니다. 기본 경로를 추가합니다.');
+    routeManager.addRoute(
+      vehicleId: 0,
+      isAM: true, // 현재 선택된 시간대(오전/오후)
+      points: [],
+      totalDistance: 0.0, // 초기값
+      estimatedTime: 0, // 초기값
+    );
+  }
+
   runApp(const MainApp());
 }
 

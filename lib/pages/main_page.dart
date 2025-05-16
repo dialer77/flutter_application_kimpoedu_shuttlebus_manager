@@ -128,7 +128,23 @@ class _MainPageState extends State<MainPage> {
         print('지도 클릭: ${data['lat']}, ${data['lng']}');
       } else if (data['event'] == 'mapRightClick') {
         _selectedRoute?.updatePoint(data['lat'], data['lng']);
-        _updateVehicleRouteInfo();
+        final vehicleId = _selectedVehicleId;
+
+        // 현재 선택된 시간대 확인
+        final isAM = timeSelections[0];
+
+        // 지도에 표시된 모든 마커 초기화
+        _tMapService.clearAllMarkers();
+
+        // 선택된 차량의 경로 포인트 가져오기
+        final routePoints = _routeManager.getRoutePoints(vehicleId, isAM: isAM);
+
+        // 각 경로점에 대해 마커 추가
+        for (int index = 0; index < routePoints.length; index++) {
+          final point = routePoints[index];
+          // 마커 추가
+          _tMapService.addMarker(point, index);
+        }
       }
     } catch (e) {
       print('메시지 파싱 오류: $e');

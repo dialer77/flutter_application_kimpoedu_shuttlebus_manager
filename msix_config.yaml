@@ -12,7 +12,7 @@ msix_config:
   certificate_password: auto
   architecture: x64
   output_name: RouteManager
-  output_path: build/windows/msix
+  output_path: D:/build/windows/msix
   languages: ko-kr
   start_menu_icon: true
   desktop_icon: true
