@@ -35,6 +35,7 @@ flutter:
   assets:
     - assets/config/ # 인증 설정 파일을 포함하도록 assets 등록
     - assets/html/
+    - assets/html/pinIcon/
     - assets/icon.png
 
 msix_config:

@@ -90,10 +90,13 @@
                         iconUrl = "/upload/tmap/marker/pin_b_m_" + count + ".png";
                         break;
                 }
+                iconUrl = "/pinIcon/pin_" + count + ".png";
 
                 // 마커 생성
                 var marker = new Tmapv3.Marker({
                     position: new Tmapv3.LatLng(lat,lon), //Marker의 중심좌표 설정.
+                    icon: iconUrl,
+                    iconSize: new Tmapv3.Size(36, 48),
                     map: map, //Marker가 표시될 Map 설정..
                 });
                 markers[id] = marker;

@@ -128,7 +128,7 @@ class LocalWebServer {
     };
   }
 
-  // HTML 파일을 임시 디렉토리에 복사하고 APP_KEY를 대체
+  // HTML 파일과 pinIcon 폴더의 png 파일만 임시 디렉토리에 복사
   Future<String> _prepareHtmlFiles(String appKey) async {
     final tempDir = await getTemporaryDirectory();
     final htmlDir = Directory(path.join(tempDir.path, 'html_server'));
@@ -138,15 +138,22 @@ class LocalWebServer {
       await htmlDir.create(recursive: true);
     }
 
+    // pinIcon 폴더 생성
+    final pinIconDir = Directory(path.join(htmlDir.path, 'pinIcon'));
+    if (!await pinIconDir.exists()) {
+      await pinIconDir.create(recursive: true);
+    }
+
     try {
       // assets/html 디렉토리의 파일 목록
       final manifestContent = await rootBundle.loadString('AssetManifest.json');
       final Map<String, dynamic> manifestMap = Map.from(json.decode(manifestContent));
 
-      final htmlAssets = manifestMap.keys.where((String key) => key.startsWith('assets/html/')).toList();
+      // HTML 파일 찾기
+      final htmlFiles = manifestMap.keys.where((String key) => key.startsWith('assets/html/') && key.endsWith('.html')).toList();
 
-      // 각 HTML 파일 복사
-      for (final assetPath in htmlAssets) {
+      // HTML 파일 복사
+      for (final assetPath in htmlFiles) {
         final fileName = path.basename(assetPath);
         var content = await rootBundle.loadString(assetPath);
 
@@ -156,13 +163,27 @@ class LocalWebServer {
 
         final file = File(path.join(htmlDir.path, fileName));
         await file.writeAsString(content);
-        print('파일 복사됨: $fileName');
+        print('HTML 파일 복사됨: $fileName');
       }
 
-      print('HTML 파일이 다음 위치에 준비되었습니다: ${htmlDir.path}');
+      // pinIcon 폴더의 png 파일 찾기
+      final pngFiles = manifestMap.keys.where((String key) => key.startsWith('assets/html/pinIcon/') && key.toLowerCase().endsWith('.png')).toList();
+
+      // png 파일 복사
+      for (final assetPath in pngFiles) {
+        final fileName = path.basename(assetPath);
+        final data = await rootBundle.load(assetPath);
+        final bytes = data.buffer.asUint8List();
+
+        final file = File(path.join(pinIconDir.path, fileName));
+        await file.writeAsBytes(bytes);
+        print('PNG 파일 복사됨: pinIcon/$fileName');
+      }
+
+      print('HTML 파일과 pinIcon 이미지가 다음 위치에 준비되었습니다: ${htmlDir.path}');
       return htmlDir.path;
     } catch (e) {
-      print('HTML 파일 준비 오류: $e');
+      print('파일 준비 오류: $e');
       rethrow;
     }
   }
