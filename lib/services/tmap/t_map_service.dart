@@ -198,7 +198,7 @@ class TMapService {
     try {
       await waitForInitialization();
 
-      await _controller.executeScript('addMarker("${point.id}", "${point.name}", ${point.longitude}, ${point.latitude}, "${point.type}", $count);');
+      await _controller.executeScript('addMarker("${point.id}", "${point.name}", ${point.longitude}, ${point.latitude}, "${point.type.name}", $count);');
     } catch (e) {
       print('마커 추가 오류: $e');
     }
@@ -236,6 +236,7 @@ class TMapService {
 
     await _controller.executeScript('''
       try {
+        clearRoutes();
         const path = [$coordinatesString];
         drawRoute(path, "$color");
       } catch (error) {
@@ -435,19 +436,22 @@ class TMapService {
       // 중간 경유지 목록 생성 (출발지와 도착지 제외)
       final viaPoints = points.where((point) => point.type == PointType.waypoint).toList();
 
-      // API 요청용 JSON 데이터 생성
-      final requestData = {
+      // 출발 시간 형식 변환 (YYYYMMDDHHmm)
+      String startTimeStr =
+          "${departureDateTime.year}${departureDateTime.month.toString().padLeft(2, '0')}${departureDateTime.day.toString().padLeft(2, '0')}${departureDateTime.hour.toString().padLeft(2, '0')}${departureDateTime.minute.toString().padLeft(2, '0')}";
+
+      // requestData를 Map<String, dynamic>으로 선언
+      final requestData = <String, dynamic>{
         "reqCoordType": "WGS84GEO",
-        "resCoordType": "WGS84GEO", // 원래 JavaScript에서 사용하던 좌표계
+        "resCoordType": "WGS84GEO",
         "startName": startPoint.name,
         "startX": startPoint.longitude.toString(),
         "startY": startPoint.latitude.toString(),
-        "startTime":
-            "${departureDateTime.year.toString().padLeft(4, '0')}${departureDateTime.month.toString().padLeft(2, '0')}${departureDateTime.day.toString().padLeft(2, '0')}${departureDateTime.hour.toString().padLeft(2, '0')}${departureDateTime.minute.toString().padLeft(2, '0')}",
+        "startTime": startTimeStr,
         "endName": endPoint.name,
         "endX": endPoint.longitude.toString(),
         "endY": endPoint.latitude.toString(),
-        "searchOption": "0", // 최적화 옵션: 0-최단거리, 1-최적경로
+        "searchOption": "0", // 0: 최단거리, 1: 최적경로
         "viaPoints": viaPoints
             .map((point) => {
                   "viaPointId": point.id,
@@ -586,14 +590,11 @@ class TMapService {
       final properties = resultData['properties'];
       final features = resultData['features'] as List;
 
-      // 기존 경로 삭제
-      await clearAllRoutes();
-
       // 최적화된 순서대로 경로 정보 생성
       List<List<Map<String, double>>> allCoordinates = [];
 
       // 경로 좌표를 RouteManager에 저장하기 위한 좌표 목록 - 세그먼트별로 분리 저장
-      List<List<List<double>>> routeManagerSegments = [];
+      List<List<double>> routeManagerSegments = [];
 
       // 경로 세그먼트 추출
       for (var feature in features) {
@@ -627,7 +628,7 @@ class TMapService {
 
           allCoordinates.add(pathCoordinates);
           // 이 세그먼트의 좌표를 routeManagerSegments에 추가
-          routeManagerSegments.add(segmentCoordinates);
+          routeManagerSegments.addAll(segmentCoordinates);
         }
       }
 
@@ -706,13 +707,6 @@ class TMapService {
     }
   }
 
-  // 모든 경로 지우기
-  Future<void> clearAllRoutes() async {
-    await _controller.executeScript('''
-     clearRoutes();
-    ''');
-  }
-
   /// 일반 경로 계산 (최적화 없이 지정된 순서대로)
   Future<bool> calculateNormalRoute(List<RoutePoint> points, int vehicleId, DateTime departureTime) async {
     try {
@@ -735,132 +729,106 @@ class TMapService {
 
       print('경로 계산 시작: 출발지: ${startPoint.name}, 도착지: ${endPoint.name}, 경유지 수: ${waypoints.length}');
 
-      // 지점 순서대로 전체 경로 좌표 배열
-      List<List<List<double>>> allRouteSegments = [];
-      double totalDistance = 0;
-      int totalDuration = 0;
-
       // HTTP 클라이언트 생성
       final client = http.Client();
 
       try {
-        // 출발지 -> 경유지1 -> 경유지2 -> ... -> 도착지 순으로 경로 계산
-        RoutePoint? currentStart = startPoint;
+        // TMap 경유지 API 경로 요청 URL (routeSequential 사용)
+        final url = Uri.parse('https://apis.openapi.sk.com/tmap/routes/routeSequential30?version=1&format=json');
 
-        // 각 구간별로 API 호출하여 경로 계산
-        for (int i = 0; i <= waypoints.length; i++) {
-          RoutePoint? currentEnd;
-          if (i == waypoints.length) {
-            currentEnd = endPoint;
-          } else {
-            currentEnd = waypoints[i];
-          }
+        // API 요청 헤더 설정
+        final headers = {'appKey': _tmapClientId, 'Content-Type': 'application/json'};
 
-          if (currentStart != null) {
-            print('구간 계산: ${currentStart.name} -> ${currentEnd.name}');
+        // 출발 시간 형식 변환 (YYYYMMDDHHmm)
+        String startTimeStr =
+            "${departureTime.year}${departureTime.month.toString().padLeft(2, '0')}${departureTime.day.toString().padLeft(2, '0')}${departureTime.hour.toString().padLeft(2, '0')}${departureTime.minute.toString().padLeft(2, '0')}";
 
-            // TMap API 경로 요청 URL
-            final url = Uri.parse('https://apis.openapi.sk.com/tmap/routes?version=1&format=json');
+        // 요청 데이터 생성
+        final requestData = <String, dynamic>{
+          "startName": startPoint.name,
+          "startX": startPoint.longitude.toString(),
+          "startY": startPoint.latitude.toString(),
+          "startTime": startTimeStr,
+          "endName": endPoint.name,
+          "endX": endPoint.longitude.toString(),
+          "endY": endPoint.latitude.toString(),
+          "searchOption": "0",
+        };
 
-            // API 요청 헤더 설정
-            final headers = {'appKey': _tmapClientId, 'Content-Type': 'application/json'};
+        // 경유지가 있으면 viaPoints 배열로 추가
+        if (waypoints.isNotEmpty) {
+          requestData["viaPoints"] =
+              waypoints.map((point) => {"viaPointId": point.id ?? "via_${point.name}", "viaPointName": point.name, "viaX": point.longitude.toString(), "viaY": point.latitude.toString()}).toList();
+        }
 
-            // 경로 요청 데이터 생성
-            final requestData = {
-              "startX": currentStart.longitude.toString(),
-              "startY": currentStart.latitude.toString(),
-              "endX": currentEnd.longitude.toString(),
-              "endY": currentEnd.latitude.toString(),
-              "reqCoordType": "WGS84GEO",
-              "resCoordType": "WGS84GEO",
-              "searchOption": "0" // 0: 최단거리, 1: 최적경로
-            };
+        print('TMap 경로 계산 API 호출: ${jsonEncode(requestData)}');
 
-            // POST 요청 전송
-            final response = await client.post(url, headers: headers, body: jsonEncode(requestData));
+        // POST 요청 전송
+        final response = await client.post(url, headers: headers, body: jsonEncode(requestData));
 
-            if (response.statusCode == 200) {
-              final responseData = jsonDecode(response.body) as Map<String, dynamic>;
+        if (response.statusCode == 200) {
+          final responseData = jsonDecode(response.body) as Map<String, dynamic>;
 
-              // 경로 정보 추출
-              if (responseData.containsKey('features')) {
-                // 총 거리와 시간 정보 추출
-                if (responseData.containsKey('features') && responseData['features'] is List) {
-                  for (var feature in responseData['features']) {
-                    if (feature['geometry']['type'] == 'LineString') {
-                      // 거리와 소요시간 누적
-                      if (feature['properties'] != null) {
-                        if (feature['properties']['distance'] != null) {
-                          final segmentDistance = double.parse(feature['properties']['distance'].toString()) / 1000; // m -> km
-                          totalDistance += segmentDistance;
-                        }
-                        if (feature['properties']['time'] != null) {
-                          final segmentTime = double.parse(feature['properties']['time'].toString()) / 60; // 초 -> 분
-                          totalDuration += segmentTime.round();
-                        }
-                      }
+          // 경로 정보 추출
+          List<List<double>> allRouteSegments = [];
+          double totalDistance = 0;
+          int totalDuration = 0;
 
-                      // 경로 좌표 추출
-                      final List coordinates = feature['geometry']['coordinates'];
-                      List<List<double>> pathCoordinates = [];
+          if (responseData.containsKey('features')) {
+            // 총 거리와 시간 정보 추출
+            if (responseData['features'] is List) {
+              for (var feature in responseData['features']) {
+                if (feature['geometry']?['type'] == 'LineString') {
+                  // 거리와 소요시간 누적
+                  if (feature['properties'] != null) {
+                    if (feature['properties']['distance'] != null) {
+                      final segmentDistance = double.parse(feature['properties']['distance'].toString()) / 1000; // m -> km
+                      totalDistance += segmentDistance;
+                    }
+                    if (feature['properties']['time'] != null) {
+                      final segmentTime = double.parse(feature['properties']['time'].toString()) / 60; // 초 -> 분
+                      totalDuration += segmentTime.round();
+                    }
+                  }
 
-                      for (var coord in coordinates) {
-                        if (coord is List && coord.length >= 2) {
-                          // TMap API는 [경도, 위도] 순서로 반환
-                          double lng = coord[0].toDouble();
-                          double lat = coord[1].toDouble();
-                          pathCoordinates.add([lat, lng]); // [위도, 경도] 순서로 저장
-                        }
-                      }
+                  // 경로 좌표 추출
+                  final List coordinates = feature['geometry']['coordinates'];
 
-                      if (pathCoordinates.isNotEmpty) {
-                        allRouteSegments.add(pathCoordinates);
-
-                        // 각 세그먼트마다 지도에 경로선 그리기
-                        await drawRoute(pathCoordinates, "#4a86e8");
-                      }
+                  for (var coord in coordinates) {
+                    if (coord is List && coord.length >= 2) {
+                      // TMap API는 [경도, 위도] 순서로 반환
+                      double lng = coord[0].toDouble();
+                      double lat = coord[1].toDouble();
+                      allRouteSegments.add([lat, lng]); // [위도, 경도] 순서로 저장
                     }
                   }
                 }
-              } else {
-                print('경로 API 응답에 features가 없습니다: ${response.body}');
               }
-            } else {
-              print('경로 API 오류: ${response.statusCode}, ${response.body}');
-              // 요청 실패 시 직선 경로로 대체
-              List<List<double>> fallbackPath = [
-                [currentStart.latitude, currentStart.longitude],
-                [currentEnd.latitude, currentEnd.longitude]
-              ];
-              allRouteSegments.add(fallbackPath);
-
-              // 직선 거리 계산
-              double distance = _calculateDistance(currentStart.latitude, currentStart.longitude, currentEnd.latitude, currentEnd.longitude);
-              totalDistance += distance;
-              int duration = (distance / 30.0 * 60).round();
-              totalDuration += duration;
-
-              // 직선 경로 표시
-              await drawRoute(fallbackPath, "#ff0000");
             }
+
+            // 경로 그리기
+            await drawRoute(allRouteSegments, "#dd00dd");
+          } else {
+            print('경로 API 응답에 features가 없습니다: ${response.body}');
+            return false;
           }
 
-          // 다음 구간을 위해 현재 도착지를 다음 구간의 출발지로 설정
-          currentStart = currentEnd;
+          // RouteManager를 통해 경로 세그먼트 저장
+          if (allRouteSegments.isNotEmpty) {
+            final routeManager = Get.find<RouteManager>();
+            routeManager.updateRouteSegments(vehicleId, allRouteSegments);
+
+            // 총 거리와 예상 시간 설정
+            routeManager.updateRouteSummary(vehicleId: vehicleId, totalDistance: double.parse(totalDistance.toStringAsFixed(1)), estimatedTime: totalDuration);
+
+            print('경로 계산 완료: 거리=${totalDistance.toStringAsFixed(1)}km, 시간=$totalDuration분, 세그먼트=${allRouteSegments.length}개');
+          }
+
+          return true;
+        } else {
+          print('경로 API 오류: ${response.statusCode}, ${response.body}');
+          return false;
         }
-
-        // RouteManager를 통해 경로 세그먼트 저장
-        if (allRouteSegments.isNotEmpty) {
-          final routeManager = Get.find<RouteManager>();
-          routeManager.updateRouteSegments(vehicleId, allRouteSegments);
-
-          // 총 거리와 예상 시간 설정
-          routeManager.updateRouteSummary(vehicleId: vehicleId, totalDistance: double.parse(totalDistance.toStringAsFixed(1)), estimatedTime: totalDuration);
-
-          print('경로 계산 완료: 거리=${totalDistance.toStringAsFixed(1)}km, 시간=$totalDuration분, 세그먼트=${allRouteSegments.length}개');
-        }
-
-        return true;
       } finally {
         client.close();
       }

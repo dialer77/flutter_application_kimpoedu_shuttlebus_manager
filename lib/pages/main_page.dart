@@ -24,8 +24,6 @@ class _MainPageState extends State<MainPage> {
   final TMapService _tMapService = TMapService();
   final TextEditingController _searchController = TextEditingController();
 
-  List<bool> timeSelections = [true, false]; // [오전, 오후]
-
   bool _isMapInitialized = false;
   bool _isMapLoading = false;
   bool _isSearching = false;
@@ -44,7 +42,6 @@ class _MainPageState extends State<MainPage> {
   @override
   void initState() {
     super.initState();
-
     // 직접 초기화 호출
     _initializeMap();
   }
@@ -66,8 +63,9 @@ class _MainPageState extends State<MainPage> {
       // 티맵 지도 서비스 초기화
       await _loadMap();
 
-      _updateVehicleRouteInfo();
-      _selectedRoute = _routeManager.allRoutes.first.startPoint;
+      if (_routeManager.allRoutes.isNotEmpty) {
+        _selectedRoute = _routeManager.allRoutes.first.startPoint;
+      }
 
       // 메시지 리스너 설정 - 새로운 메시지 스트림 사용
       _messageSubscription = _tMapService.messageStream.listen(_handleMapMessage);
@@ -130,20 +128,30 @@ class _MainPageState extends State<MainPage> {
         _selectedRoute?.updatePoint(data['lat'], data['lng']);
         final vehicleId = _selectedVehicleId;
 
-        // 현재 선택된 시간대 확인
-        final isAM = timeSelections[0];
-
         // 지도에 표시된 모든 마커 초기화
         _tMapService.clearAllMarkers();
 
         // 선택된 차량의 경로 포인트 가져오기
-        final routePoints = _routeManager.getRoutePoints(vehicleId, isAM: isAM);
+        final routePoints = _routeManager.getRoutePoints(vehicleId);
 
-        // 각 경로점에 대해 마커 추가
-        for (int index = 0; index < routePoints.length; index++) {
-          final point = routePoints[index];
-          // 마커 추가
-          _tMapService.addMarker(point, index);
+        // 경로 포인트를 유형별로 분류
+        final startPoints = routePoints.where((point) => point.type == PointType.start).toList();
+        final wayPoints = routePoints.where((point) => point.type == PointType.waypoint).toList();
+        final endPoints = routePoints.where((point) => point.type == PointType.end).toList();
+
+        // 1. 시작 지점 마커 추가
+        for (int i = 0; i < startPoints.length; i++) {
+          _tMapService.addMarker(startPoints[i], i);
+        }
+
+        // 2. 경유 지점 마커 추가
+        for (int i = 0; i < wayPoints.length; i++) {
+          _tMapService.addMarker(wayPoints[i], i);
+        }
+
+        // 3. 도착 지점 마커 추가
+        for (int i = 0; i < endPoints.length; i++) {
+          _tMapService.addMarker(endPoints[i], i);
         }
       }
     } catch (e) {
@@ -234,27 +242,8 @@ class _MainPageState extends State<MainPage> {
                     children: [
                       ElevatedButton.icon(
                         onPressed: () {
-                          setState(() {
-                            // 현재 차량 수 확인
-                            final currentCount = vehicleCount;
-
-                            // 최대 10대까지만 추가 가능
-                            if (currentCount < 10) {
-                              // RouteManager를 통해 새 차량 추가
-                              _routeManager.ensureVehicleCount(currentCount + 1, timeSelections[0]);
-
-                              // 새로 추가된 차량으로 자동 선택
-                              _selectedVehicleId = currentCount;
-
-                              // UI 업데이트
-                              _updateVehicleRouteInfo();
-                            } else {
-                              // 최대 차량 수 초과 알림
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('최대 10대까지만 추가할 수 있습니다')),
-                              );
-                            }
-                          });
+                          // 차량 추가 다이얼로그 표시
+                          _showAddVehicleDialog();
                         },
                         icon: const Icon(Icons.add),
                         label: const Text('차량 추가'),
@@ -264,13 +253,13 @@ class _MainPageState extends State<MainPage> {
                         ),
                       ),
                       ElevatedButton.icon(
-                        onPressed: vehicleCount > 1
+                        onPressed: vehicleCount > 0
                             ? () {
                                 setState(() {
                                   // 현재 차량 수 확인
                                   final currentCount = vehicleCount;
 
-                                  if (currentCount > 1) {
+                                  if (currentCount > 0) {
                                     int index = _routeManager.allRoutes.indexOf(_routeManager.getRoutesByVehicle(_selectedVehicleId).first);
 
                                     if (index == vehicleCount - 1) {
@@ -279,13 +268,15 @@ class _MainPageState extends State<MainPage> {
                                     // 선택된 차량 제거
                                     _routeManager.removeVehicle(_selectedVehicleId);
 
-                                    _selectedVehicleId = _routeManager.allRoutes[index].vehicleId;
+                                    _selectedVehicleId = index < 0 ? 0 : _routeManager.allRoutes[index].vehicleId;
 
                                     // 선택된 차량의 경로 마커 및 경로선 제거
                                     _tMapService.clearMap();
 
                                     // UI 업데이트
-                                    _updateVehicleRouteInfo();
+                                    if (_routeManager.allRoutes.isNotEmpty) {
+                                      _updateVehicleRouteInfo();
+                                    }
                                   }
                                 });
                               }
@@ -314,11 +305,8 @@ class _MainPageState extends State<MainPage> {
                             final routeInfo = _routeManager.allRoutes[index];
                             _selectedVehicleId = routeInfo.vehicleId;
 
-                            // 현재 선택된 시간대 확인
-                            final isAM = timeSelections[0];
-
                             // 선택된 차량의 시작 지점 확인
-                            final startPoint = _routeManager.getStartPoint(index, isAM: isAM);
+                            final startPoint = _routeManager.getStartPoint(index);
 
                             // 시작 지점이 있으면 지도를 해당 위치로 이동
                             if (startPoint != null) {
@@ -340,7 +328,7 @@ class _MainPageState extends State<MainPage> {
                           foregroundColor: _selectedVehicleId == _routeManager.allRoutes[index].vehicleId ? Colors.white : Colors.black,
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         ),
-                        child: Text('${_routeManager.allRoutes[index].vehicleId + 1}호차'),
+                        child: Text(_routeManager.allRoutes[index].vehicleName),
                       ),
                     ),
                   ),
@@ -597,39 +585,11 @@ class _MainPageState extends State<MainPage> {
                               // 경로 제목과 개수 정보
                               Expanded(
                                 child: Text(
-                                  '${_selectedVehicleId + 1}호차 경로 (${_routeManager.getRoutePointCount(_selectedVehicleId)}개 지점)',
+                                  _routeManager.allRoutes.isNotEmpty
+                                      ? '${_routeManager.getVehicleName(_selectedVehicleId)} 경로 (${_routeManager.getRoutePointCount(_selectedVehicleId)}개 지점)'
+                                      : '경로 정보가 없습니다',
                                   style: const TextStyle(fontWeight: FontWeight.bold),
                                 ),
-                              ),
-
-                              // 오전/오후 선택 버튼 (기존 위치에서 이동)
-                              ToggleButtons(
-                                constraints: const BoxConstraints(minWidth: 40, minHeight: 30),
-                                isSelected: timeSelections,
-                                onPressed: (index) {
-                                  setState(() {
-                                    for (int i = 0; i < timeSelections.length; i++) {
-                                      timeSelections[i] = i == index;
-                                    }
-
-                                    // 현재 선택된 시간대 설정 (RouteManager에 알림)
-                                    final isAM = timeSelections[0];
-                                    _routeManager.setCurrentTimeOfDay(isAM);
-
-                                    // UI 업데이트
-                                    _updateVehicleRouteInfo();
-                                  });
-                                },
-                                children: const [
-                                  Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 8),
-                                    child: Text('오전', style: TextStyle(fontSize: 12)),
-                                  ),
-                                  Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 8),
-                                    child: Text('오후', style: TextStyle(fontSize: 12)),
-                                  ),
-                                ],
                               ),
                             ],
                           ),
@@ -940,14 +900,11 @@ class _MainPageState extends State<MainPage> {
       // 마커 고유 ID 생성
       final markerId = 'vehicle_${_selectedVehicleId + 1}_${DateTime.now().millisecondsSinceEpoch}';
 
-      // 현재 선택된 시간대 확인
-      final isAM = timeSelections[0];
-
       // 포인트 타입 결정
       PointType pointType = PointType.waypoint; // 기본값은 경유지
 
       // 첫 번째 포인트인 경우 시작 지점으로 설정
-      if (_routeManager.getRoutePointCount(_selectedVehicleId, isAM: isAM) == 0) {
+      if (_routeManager.getRoutePointCount(_selectedVehicleId) == 0) {
         pointType = PointType.start;
       }
 
@@ -964,10 +921,10 @@ class _MainPageState extends State<MainPage> {
             latitude: location['lat'],
             longitude: location['lng'],
             type: pointType, // 결정된 포인트 타입 사용
-            sequence: _routeManager.getRoutePointCount(_selectedVehicleId, isAM: isAM) + 1);
+            sequence: _routeManager.getRoutePointCount(_selectedVehicleId) + 1);
 
         // RouteManager를 통해 경로점 추가 (현재 시간대 지정)
-        _routeManager.addRoutePoint(_selectedVehicleId, routePoint, isAM: isAM);
+        _routeManager.addRoutePoint(_selectedVehicleId, routePoint);
         _selectedRoute ??= routePoint;
 
         // 경로 정보 갱신
@@ -999,30 +956,39 @@ class _MainPageState extends State<MainPage> {
   // 차량 경로 정보 UI 업데이트
   void _updateVehicleRouteInfo() {
     setState(() {
-      final vehicleId = _selectedVehicleId;
-
-      // 현재 선택된 시간대 확인
-      final isAM = timeSelections[0];
-
       // 지도에 표시된 모든 마커 초기화
       _tMapService.clearAllMarkers();
+      if (_routeManager.allRoutes.isEmpty) {
+        return;
+      }
+
+      final vehicleId = _selectedVehicleId;
 
       // 선택된 차량의 경로 포인트 가져오기
-      final routePoints = _routeManager.getRoutePoints(vehicleId, isAM: isAM);
+      final routePoints = _routeManager.getRoutePoints(vehicleId);
 
-      // 각 경로점에 대해 마커 추가
-      for (int index = 0; index < routePoints.length; index++) {
-        final point = routePoints[index];
-        // 마커 추가
-        _tMapService.addMarker(point, index);
+      // 경로 포인트를 유형별로 분류
+      final startPoints = routePoints.where((point) => point.type == PointType.start).toList();
+      final wayPoints = routePoints.where((point) => point.type == PointType.waypoint).toList();
+      final endPoints = routePoints.where((point) => point.type == PointType.end).toList();
+
+      // 1. 시작 지점 마커 추가
+      for (int i = 0; i < startPoints.length; i++) {
+        _tMapService.addMarker(startPoints[i], i);
       }
 
-      _tMapService.clearAllRoutes();
+      // 2. 경유 지점 마커 추가
+      for (int i = 0; i < wayPoints.length; i++) {
+        _tMapService.addMarker(wayPoints[i], i);
+      }
+
+      // 3. 도착 지점 마커 추가
+      for (int i = 0; i < endPoints.length; i++) {
+        _tMapService.addMarker(endPoints[i], i);
+      }
 
       final routeInfo = _routeManager.getRoutesByVehicle(vehicleId).first;
-      for (var segment in routeInfo.coordinates) {
-        _tMapService.drawRoute(segment, '#dd00dd');
-      }
+      _tMapService.drawRoute(routeInfo.coordinates, '#dd00dd');
     });
   }
 
@@ -1272,5 +1238,89 @@ class _MainPageState extends State<MainPage> {
         },
       ),
     );
+  }
+
+  // 차량 추가 다이얼로그 표시
+  void _showAddVehicleDialog() {
+    final TextEditingController nameController = TextEditingController();
+    final FocusNode focusNode = FocusNode();
+    bool isProcessing = false; // 중복 처리 방지
+
+    // 차량 추가 처리 함수
+    void processVehicleAdd() {
+      if (isProcessing) return; // 이미 처리 중이면 중복 실행 방지
+      isProcessing = true;
+
+      final String vehicleName = nameController.text.trim();
+
+      // 현재 차량 수 확인
+      final currentCount = vehicleCount;
+
+      // 최대 10대까지만 추가 가능
+      if (currentCount < 10) {
+        try {
+          // RouteManager를 통해 새 차량 추가 (이름 포함)
+          _routeManager.ensureVehicleCount(currentCount + 1, vehicleName);
+
+          setState(() {
+            // 새로 추가된 차량으로 자동 선택
+            _selectedVehicleId = _routeManager.allRoutes.last.vehicleId;
+
+            // UI 업데이트
+            _updateVehicleRouteInfo();
+          });
+        } catch (e) {
+          print('차량 추가 오류: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('차량 추가 중 오류가 발생했습니다: $e')),
+          );
+        }
+      } else {
+        // 최대 차량 수 초과 알림
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('최대 10대까지만 추가할 수 있습니다')),
+        );
+      }
+
+      Navigator.of(context).pop();
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('차량 추가'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              focusNode: focusNode,
+              decoration: const InputDecoration(
+                labelText: '차량 이름',
+                hintText: '예: 1호차 오전, 2호차 오후, 3호차 오전 등',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+              // 편집 완료 시 호출됨 (엔터 키 누를 때)
+              onEditingComplete: processVehicleAdd,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: processVehicleAdd,
+            child: const Text('추가'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      // 다이얼로그가 닫힐 때 컨트롤러와 포커스 노드 해제
+      nameController.dispose();
+      focusNode.dispose();
+    });
   }
 }

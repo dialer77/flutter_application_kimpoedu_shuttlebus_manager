@@ -3,23 +3,24 @@ import 'route_point.dart';
 // 경로 정보를 저장하는 클래스
 class RouteInfo {
   int vehicleId;
-  bool isAM;
+  String vehicleName;
+
   final List<RoutePoint> points;
   double totalDistance;
   int estimatedTime;
   bool isActive; // 경로 활성화 상태
   final DateTime createdAt;
-  List<List<List<double>>> coordinates = []; // 경로 선 좌표 추가
+  List<List<double>> coordinates = []; // 경로 선 좌표 추가
 
   RouteInfo({
     required this.vehicleId,
-    required this.isAM,
+    required this.vehicleName,
     required this.points,
     required this.totalDistance,
     required this.estimatedTime,
     DateTime? createdAt,
     this.isActive = true, // 기본값은 활성화 상태
-    List<List<List<double>>>? coordinates,
+    List<List<double>>? coordinates,
   })  : createdAt = createdAt ?? DateTime.now(),
         coordinates = coordinates ?? [];
 
@@ -35,7 +36,7 @@ class RouteInfo {
   // 관련 정보를 문자열로 변환
   @override
   String toString() {
-    return '차량: ${vehicleId + 1}호차, 시간대: ${isAM ? '오전' : '오후'}, '
+    return '차량: ${vehicleId + 1}호차, 차량명 : $vehicleName, '
         '거리: ${totalDistance.toStringAsFixed(1)}km, 예상 시간: $estimatedTime분';
   }
 
@@ -68,7 +69,7 @@ class RouteInfo {
   Map<String, dynamic> toJson() {
     return {
       'vehicleId': vehicleId,
-      'isAM': isAM,
+      'vehicleName': vehicleName,
       'points': points.map((p) => p.toJson()).toList(),
       'totalDistance': totalDistance,
       'estimatedTime': estimatedTime,
@@ -79,19 +80,19 @@ class RouteInfo {
 
   // JSON에서 생성
   factory RouteInfo.fromJson(Map<String, dynamic> json) {
-    List<List<List<double>>> coords = [];
+    List<List<double>> coords = [];
     if (json.containsKey('coordinates')) {
       final coordsData = json['coordinates'] as List;
       for (var coord in coordsData) {
         if (coord is List) {
-          coords.add(coord.map<List<double>>((e) => e is List ? e.map<double>((f) => f is num ? f.toDouble() : 0.0).toList() : []).toList());
+          coords.add(coord.map<double>((e) => e is num ? e.toDouble() : 0.0).toList());
         }
       }
     }
 
     return RouteInfo(
       vehicleId: json['vehicleId'],
-      isAM: json['isAM'],
+      vehicleName: json['vehicleName'],
       points: (json['points'] as List).map((p) => RoutePoint.fromJson(p)).toList(),
       totalDistance: json['totalDistance'],
       estimatedTime: json['estimatedTime'],

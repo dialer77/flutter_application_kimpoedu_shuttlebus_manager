@@ -24,14 +24,13 @@
 
             var map;
             var markers = {};
-            var polylineRoutes = {};
+            var polyLine;
             // 페이지가 로딩이 된 후 호출하는 함수입니다.
             function initTmap(){
                 // 기본 변수 초기화
                 window.map = null;
                 window.infoWindow = null;
                 window.markers = {};
-                window.polylineRoutes = {};
                 
                 try {
                     // map 생성
@@ -81,16 +80,15 @@
                 var iconUrl = "";
                 switch (type) {
                     case "start":
-                        iconUrl = "/upload/tmap/marker/pin_r_m_s.png";
+                        iconUrl = "/pinIcon/pin_start.png";
                         break;
                     case "end":
-                        iconUrl = "/upload/tmap/marker/pin_r_m_e.png";
+                        iconUrl = "/pinIcon/pin_end.png";
                         break;
                     case "waypoint":
-                        iconUrl = "/upload/tmap/marker/pin_b_m_" + count + ".png";
+                        iconUrl = "/pinIcon/pin_" + (count + 1) + ".png";
                         break;
                 }
-                iconUrl = "/pinIcon/pin_" + count + ".png";
 
                 // 마커 생성
                 var marker = new Tmapv3.Marker({
@@ -119,24 +117,21 @@
             
             // 경로 그리기 함수
             function drawRoute(route, color) {
-                var polyline = new Tmapv3.Polyline({
+                
+                
+                polyLine = new Tmapv3.Polyline({
 						path : route,
 						strokeColor : color,
-						strokeWeight: 6,
+						strokeWeight: 4,
 						map : map
 					});
-                polylineRoutes.push(polyline);
-                
             }
 
 
             // 경로 클리어 함수
             function clearRoutes() {
                 try{
-                    for (var i = 0; i < polylineRoutes.length; i++) {
-                        polylineRoutes[i].setMap(null);
-                    }
-                    polylineRoutes = [];
+                    polyLine.setMap(null);
                 } catch (error) {
                     console.error('경로 제거 오류:', error);
                 }

@@ -9,6 +9,8 @@ class SynologyApi {
   final String quickConnectId;
   String? baseUrl;
   String? sid;
+  String? _lastUsername;
+  String? _lastPassword;
 
   SynologyApi(this.quickConnectId);
 
@@ -69,10 +71,14 @@ class SynologyApi {
   }
 
   // 로그인 메서드 - FileStation 서비스 권한 추가
-  Future<void> login(String username, String password) async {
+  Future<bool> login(String username, String password) async {
     if (baseUrl == null) {
       await resolveQuickConnectUrl();
     }
+
+    // 사용자 정보 저장 (세션 갱신용)
+    _lastUsername = username;
+    _lastPassword = password;
 
     try {
       // 로그인 API 버전 확인
@@ -103,20 +109,21 @@ class SynologyApi {
       if (data['success']) {
         sid = data['data']['sid'];
         print('로그인 성공: $username, SID: $sid');
-
-        await createDirectory('test');
+        return true;
       } else {
         if (data.containsKey('error')) {
           final errorCode = data['error']['code'];
           final errorMessage = _getErrorMessage(errorCode);
-          throw Exception('로그인 실패 (코드: $errorCode): $errorMessage');
+          print('로그인 실패 (코드: $errorCode): $errorMessage');
         } else {
-          throw Exception('로그인 실패: 알 수 없는 오류');
+          print('로그인 실패: 알 수 없는 오류');
         }
+        return false;
       }
     } catch (e) {
       print('로그인 오류: $e');
       rethrow;
+      return false;
     }
   }
 
@@ -299,7 +306,7 @@ class SynologyApi {
 
       // API에 맞게 파라미터 설정 (name 파라미터는 대괄호로 감싸야 함)
       final encodedParentPath = Uri.encodeComponent(parentPath);
-      final encodedFolderName = Uri.encodeComponent('[$folderName]');
+      final encodedFolderName = Uri.encodeComponent(folderName);
 
       // 세션 ID를 따옴표로 감싸기
       final quotedSid = '"${sid!}"';
@@ -334,7 +341,20 @@ class SynologyApi {
   // 6. 파일 저장 메서드 (Synology 공식 문서 예제와 일치하도록 구현)
   Future<bool> saveFile(String path, String content) async {
     if (baseUrl == null) await resolveQuickConnectUrl();
-    if (sid == null) throw Exception('로그인 필요');
+
+    // 파일 업로드 전 로그인 세션 무조건 갱신
+    if (_lastUsername != null && _lastPassword != null) {
+      print('파일 업로드 전 로그인 재시도...');
+      final loginSuccess = await login(_lastUsername!, _lastPassword!);
+      if (!loginSuccess) {
+        print('로그인 실패, 파일 업로드를 중단합니다.');
+        return false;
+      }
+      print('로그인 갱신 성공: $sid');
+    } else {
+      print('저장된 로그인 정보가 없습니다. 먼저 로그인이 필요합니다.');
+      return false;
+    }
 
     // 로컬 임시 파일 변수
     File? tempFile;
@@ -362,50 +382,93 @@ class SynologyApi {
         print('대상 디렉토리 생성 성공');
       }
 
-      // 3. 파일 업로드 - 공식 문서 예제와 정확히 일치
       print('파일 업로드 시도: 로컬(${tempFile.path}) -> NAS($path)');
-
-      // 기본 URI 구성
-      final uploadUri = Uri.parse('$baseUrl/webapi/entry.cgi');
-
       final fileName = path.split('/').last;
 
-      // MultipartRequest 생성
-      final request = http.MultipartRequest('POST', uploadUri);
+      // Python 예제와 같이 URL 매개변수 구성
+      final uploadUrlStr = '$baseUrl/webapi/entry.cgi';
+      final queryParams = {'api': 'SYNO.FileStation.Upload', 'version': '2', 'method': 'upload', '_sid': sid!};
 
-      // 필드 추가 (공식 문서 예제와 동일한 순서)
-      request.fields['api'] = 'SYNO.FileStation.Upload';
-      request.fields['version'] = '2';
-      request.fields['method'] = 'upload';
-      request.fields['path'] = targetDir;
-      request.fields['create_parents'] = 'true';
+      // 쿼리 파라미터 문자열로 변환
+      final queryString = queryParams.entries.map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}').join('&');
+      final fullUrl = '$uploadUrlStr?$queryString';
+      print('업로드 URL: $fullUrl');
 
-      // 옵션: 기존 파일 덮어쓰기
-      request.fields['overwrite'] = 'true';
-      // 인증 세션 ID 추가 (공식 예제에는 없지만 실제로는 필요)
-      request.fields['_sid'] = sid!;
+      // 고정 boundary 값 - Python 예제와 동일하게 지정
+      const boundary = 'AaB03x';
 
-      print('필드 구성 완료: ${request.fields}');
+      // 로우 레벨 HttpClient 사용
+      final client = HttpClient();
+      final request = await client.openUrl('POST', Uri.parse(fullUrl));
 
-      // 파일 파트 추가 (마지막에 위치해야 함)
-      final multipartFile = await http.MultipartFile.fromPath('file', tempFile.path, filename: fileName);
+      // Content-Type 헤더 설정 (Python 예제와 동일)
+      request.headers.set('Content-Type', 'multipart/form-data; boundary=$boundary');
 
-      request.files.add(multipartFile);
-      print('파일 추가됨: ${multipartFile.filename}, ${multipartFile.length} 바이트');
+      // 요청 본문 구성을 위한 BytesBuilder 사용
+      final requestBody = BytesBuilder();
 
-      // 요청 전송
+      // UTF-8 인코더
+      final utf8Encoder = utf8.encoder;
+
+      // 'path' 필드 추가
+      requestBody.add(utf8Encoder.convert('--$boundary\r\n'));
+      requestBody.add(utf8Encoder.convert('Content-Disposition: form-data; name="path"\r\n\r\n'));
+      requestBody.add(utf8Encoder.convert('$targetDir\r\n'));
+
+      // 'create_parents' 필드 추가
+      requestBody.add(utf8Encoder.convert('--$boundary\r\n'));
+      requestBody.add(utf8Encoder.convert('Content-Disposition: form-data; name="create_parents"\r\n\r\n'));
+      requestBody.add(utf8Encoder.convert('true\r\n'));
+
+      // 'overwrite' 필드 추가
+      requestBody.add(utf8Encoder.convert('--$boundary\r\n'));
+      requestBody.add(utf8Encoder.convert('Content-Disposition: form-data; name="overwrite"\r\n\r\n'));
+      requestBody.add(utf8Encoder.convert('true\r\n'));
+
+      // 파일 데이터 추가
+      requestBody.add(utf8Encoder.convert('--$boundary\r\n'));
+      requestBody.add(utf8Encoder.convert('Content-Disposition: form-data; name="file"; filename="$fileName"\r\n'));
+      requestBody.add(utf8Encoder.convert('Content-Type: application/octet-stream\r\n\r\n'));
+
+      // 파일 내용 읽기 및 추가
+      final fileBytes = await tempFile.readAsBytes();
+      requestBody.add(fileBytes);
+      requestBody.add(utf8Encoder.convert('\r\n'));
+
+      // 본문 종료
+      requestBody.add(utf8Encoder.convert('--$boundary--\r\n'));
+
+      // 최종 바이트 배열 생성
+      final requestBytes = requestBody.toBytes();
+      final contentLength = requestBytes.length;
+
+      // Content-Length 헤더 명시적 설정
+      request.headers.set('Content-Length', contentLength.toString());
+      request.contentLength = contentLength;
+
       print('요청 전송 중...');
-      final streamedResponse = await request.send();
-      print('응답 상태 코드: ${streamedResponse.statusCode}');
+      print('본문 크기: $contentLength 바이트');
+      print('Content-Type: ${request.headers.value('Content-Type')}');
+      print('Content-Length: ${request.headers.value('Content-Length')}');
 
-      // 응답 본문 수신 및 디버깅
-      final bytes = await streamedResponse.stream.toBytes();
-      final responseBody = utf8.decode(bytes);
+      // 본문 데이터 전송
+      request.add(requestBytes);
+
+      // 요청 완료 및 응답 대기
+      final response = await request.close();
+      print('응답 상태 코드: ${response.statusCode}');
+
+      // 응답 본문 읽기
+      final responseBytes = await response.fold<List<int>>(
+        <int>[],
+        (previous, element) => previous..addAll(element),
+      );
+      final responseBody = utf8.decode(responseBytes);
       print('응답 본문: $responseBody');
 
-      // 업로드 결과 확인
-      if (streamedResponse.statusCode != 200) {
-        print('파일 업로드 실패 (HTTP 상태: ${streamedResponse.statusCode})');
+      // 응답 처리
+      if (response.statusCode != 200) {
+        print('파일 업로드 실패 (HTTP 상태: ${response.statusCode})');
         print('응답 내용: $responseBody');
         return false;
       }
@@ -435,7 +498,7 @@ class SynologyApi {
       print('파일 저장 예외 발생: $e');
       return false;
     } finally {
-      // 임시 파일 정리 (성공 여부와 관계없이 실행)
+      // 임시 파일 정리
       if (tempFile != null && await tempFile.exists()) {
         try {
           await tempFile.delete();
@@ -444,37 +507,6 @@ class SynologyApi {
           print('임시 파일 삭제 중 오류: $e');
         }
       }
-    }
-  }
-
-  // 파일 이동 메서드
-  Future<bool> moveFile(String sourcePath, String destPath, {bool overwrite = false}) async {
-    if (baseUrl == null) await resolveQuickConnectUrl();
-    if (sid == null) throw Exception('로그인 필요');
-
-    try {
-      final encodedSourcePath = Uri.encodeComponent(sourcePath);
-      final encodedDestPath = Uri.encodeComponent(destPath);
-      final response = await http.get(
-        Uri.parse(
-            '$baseUrl/webapi/entry.cgi?api=SYNO.FileStation.CopyMove&version=3&method=start&path=$encodedSourcePath&dest_folder_path=${Uri.encodeComponent(destPath.substring(0, destPath.lastIndexOf("/")))}&overwrite=${overwrite ? "true" : "false"}&remove_src=true&_sid=$sid'),
-      );
-
-      final data = json.decode(response.body);
-      if (data['success'] == true) {
-        final taskId = data['data']['taskid'];
-        print('파일 이동 작업 시작됨, 태스크 ID: $taskId');
-
-        // 이동 작업 완료 대기
-        return await waitForTaskCompletion(taskId);
-      } else {
-        final errorCode = data['error']['code'];
-        print('파일 이동 시작 실패 (에러 코드: $errorCode): ${_getErrorMessage(errorCode)}');
-        return false;
-      }
-    } catch (e) {
-      print('파일 이동 오류: $e');
-      return false;
     }
   }
 

@@ -25,22 +25,17 @@ class RouteManager {
     return _routes.where((route) => route.vehicleId == vehicleId).toList();
   }
 
-  // 오전/오후 경로 가져오기
-  List<RouteInfo> getRoutesByTimeOfDay(bool isAM) {
-    return _routes.where((route) => route.isAM == isAM).toList();
-  }
-
   // 새 경로 추가
   RouteInfo addRoute({
     required int vehicleId,
-    required bool isAM,
+    required String vehicleName,
     required List<RoutePoint> points,
     required double totalDistance,
     required int estimatedTime,
   }) {
     final route = RouteInfo(
       vehicleId: vehicleId,
-      isAM: isAM,
+      vehicleName: vehicleName,
       points: points,
       totalDistance: totalDistance,
       estimatedTime: estimatedTime,
@@ -57,28 +52,18 @@ class RouteManager {
   }
 
   // 특정 차량 ID의 경로점 개수 가져오기 (수정)
-  int getRoutePointCount(int vehicleId, {bool? isAM}) {
-    // isAM이 제공되면 해당 시간대의 경로만 확인, 아니면 현재 선택된 시간대
-    final currentIsAM = isAM ?? _currentIsAM;
+  int getRoutePointCount(int vehicleId) {
+    return getRoutePoints(vehicleId).length;
+  }
 
-    // 해당 차량 및 시간대(오전/오후)의 경로 목록 가져오기
-    final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
-
-    // 경로가 있는 경우 첫 번째 경로의 포인트 개수 반환
-    if (routes.isNotEmpty) {
-      return routes.first.points.length;
-    }
-
-    return 0;
+  String getVehicleName(int vehicleId) {
+    return _routes.where((route) => route.vehicleId == vehicleId).first.vehicleName;
   }
 
   // 특정 차량 ID의 경로점 목록 가져오기 (수정)
-  List<RoutePoint> getRoutePoints(int vehicleId, {bool? isAM}) {
-    // isAM이 제공되면 해당 시간대의 경로만 확인, 아니면 현재 선택된 시간대
-    final currentIsAM = isAM ?? _currentIsAM;
-
-    // 해당 차량 및 시간대(오전/오후)의 경로 목록 가져오기
-    final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
+  List<RoutePoint> getRoutePoints(int vehicleId) {
+    // 해당 차량의 경로 목록 가져오기
+    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
 
     // 경로가 있는 경우 첫 번째 경로의 포인트 반환
     if (routes.isNotEmpty) {
@@ -90,11 +75,8 @@ class RouteManager {
 
   // 차량 경로에 포인트 추가 (시간대 고려하도록 수정)
   void addRoutePoint(int vehicleId, RoutePoint point, {bool? isAM, String? name}) {
-    // isAM이 제공되면 해당 시간대의 경로만 확인, 아니면 현재 선택된 시간대
-    final currentIsAM = isAM ?? _currentIsAM;
-
     // 해당 차량 및 시간대(오전/오후)의 경로 확인
-    final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
+    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
 
     // 경로가 없는 경우 새 경로 생성
     if (routes.isEmpty) {
@@ -111,7 +93,7 @@ class RouteManager {
 
       addRoute(
         vehicleId: vehicleId,
-        isAM: currentIsAM, // 현재 선택된 시간대(오전/오후)
+        vehicleName: '',
         points: [newPoint],
         totalDistance: 0.0, // 초기값
         estimatedTime: 0, // 초기값
@@ -201,9 +183,8 @@ class RouteManager {
   }
 
   // 특정 인덱스의 경로점 제거 (시간대 고려)
-  RoutePoint? removeRoutePoint(int vehicleId, int index, {bool? isAM}) {
-    final currentIsAM = isAM ?? _currentIsAM;
-    final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
+  RoutePoint? removeRoutePoint(int vehicleId, int index) {
+    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
 
     if (routes.isEmpty || index < 0 || index >= routes.first.points.length) {
       return null;
@@ -256,9 +237,8 @@ class RouteManager {
   }
 
   // 차량 경로의 시작 지점 가져오기 (시간대 고려)
-  RoutePoint? getStartPoint(int vehicleId, {bool? isAM}) {
-    final currentIsAM = isAM ?? _currentIsAM;
-    final points = getRoutePoints(vehicleId, isAM: currentIsAM);
+  RoutePoint? getStartPoint(int vehicleId) {
+    final points = getRoutePoints(vehicleId);
 
     for (final point in points) {
       if (point.type == PointType.start) {
@@ -271,9 +251,8 @@ class RouteManager {
   }
 
   // 차량 경로의 종료 지점 가져오기 (시간대 고려)
-  RoutePoint? getEndPoint(int vehicleId, {bool? isAM}) {
-    final currentIsAM = isAM ?? _currentIsAM;
-    final points = getRoutePoints(vehicleId, isAM: currentIsAM);
+  RoutePoint? getEndPoint(int vehicleId) {
+    final points = getRoutePoints(vehicleId);
 
     for (final point in points) {
       if (point.type == PointType.end) {
@@ -401,7 +380,7 @@ class RouteManager {
   }
 
   // 차량 수 확인 및 업데이트
-  void ensureVehicleCount(int count, bool isAM) {
+  void ensureVehicleCount(int count, String vehicleName) {
     // 기존 차량 ID 수집
     final existingVehicleIds = <int>{};
     for (final route in _routes) {
@@ -417,7 +396,7 @@ class RouteManager {
         // 차량에 대한 경로가 없으면 빈 경로 생성
         addRoute(
           vehicleId: vehicleId,
-          isAM: isAM,
+          vehicleName: vehicleName,
           points: [],
           totalDistance: 0.0,
           estimatedTime: 0,
@@ -426,17 +405,8 @@ class RouteManager {
     }
   }
 
-  // 모든 경로의 시간 설정 업데이트
-  void updateAllRoutesTime(bool isAM) {
-    // 현재 시간대 업데이트
-    _currentIsAM = isAM;
-
-    // 다른 메서드에서는 이미 현재 선택된 시간대를 참조하므로
-    // 여기서는 추가 작업이 필요 없음
-  }
-
   // 특정 경로 가져오기 (없으면 생성)
-  RouteInfo getOrCreateRoute(int vehicleId, bool isAM, {String? name}) {
+  RouteInfo getOrCreateRoute(int vehicleId, {String? name}) {
     // 해당 차량의 경로 찾기
     final routes = getRoutesByVehicle(vehicleId);
 
@@ -444,7 +414,7 @@ class RouteManager {
       // 경로가 없으면 새로 생성
       return addRoute(
         vehicleId: vehicleId,
-        isAM: isAM,
+        vehicleName: '',
         points: [],
         totalDistance: 0.0,
         estimatedTime: 0,
@@ -460,7 +430,7 @@ class RouteManager {
     final routesJson = _routes
         .map((route) => {
               'vehicleId': route.vehicleId,
-              'isAM': route.isAM,
+              'vehicleName': route.vehicleName,
               'points': route.points
                   .map((point) => {
                         'id': point.id,
@@ -522,12 +492,12 @@ class RouteManager {
         }
 
         // 경로 좌표 로드
-        List<List<List<double>>> coordinates = [];
+        List<List<double>> coordinates = [];
         if (routeJson.containsKey('coordinates')) {
           final coordsJson = routeJson['coordinates'] as List;
           for (var coord in coordsJson) {
             if (coord is List) {
-              coordinates.add(coord.map<List<double>>((e) => e is List ? e.map<double>((f) => f is num ? f.toDouble() : 0.0).toList() : []).toList());
+              coordinates.add(coord.map<double>((e) => e is num ? e.toDouble() : 0.0).toList());
             }
           }
         }
@@ -535,7 +505,7 @@ class RouteManager {
         // 경로 추가
         final route = RouteInfo(
           vehicleId: routeJson['vehicleId'],
-          isAM: routeJson['isAM'],
+          vehicleName: routeJson['vehicleName'],
           points: points,
           totalDistance: routeJson['totalDistance'],
           estimatedTime: routeJson['estimatedTime'],
@@ -554,8 +524,8 @@ class RouteManager {
   }
 
   // 현재 시간대(오전/오후)에 맞는 경로 가져오기
-  RouteInfo? getCurrentRoute(int vehicleId, bool isAM) {
-    final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == isAM).toList();
+  RouteInfo? getCurrentRoute(int vehicleId) {
+    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
 
     return routes.isNotEmpty ? routes.first : null;
   }
@@ -573,18 +543,15 @@ class RouteManager {
     // 경로 업데이트를 적용할 차량 ID 결정
     final targetVehicleId = vehicleId ?? (newPoints.isNotEmpty ? int.tryParse(newPoints.first.id.split('_')[1]) ?? 0 : 0);
 
-    // 시간대 결정 (제공되지 않으면 현재 시간대 사용)
-    final currentIsAM = isAM ?? _currentIsAM;
-
     // 해당 차량의 경로 찾기
-    final routes = _routes.where((route) => route.vehicleId == targetVehicleId && route.isAM == currentIsAM).toList();
+    final routes = _routes.where((route) => route.vehicleId == targetVehicleId).toList();
 
     if (routes.isEmpty) {
       // 해당 경로가 없으면 새로 생성
       if (newPoints.isNotEmpty) {
         addRoute(
           vehicleId: targetVehicleId,
-          isAM: currentIsAM,
+          vehicleName: '',
           points: newPoints,
           totalDistance: 0.0, // 나중에 재계산됨
           estimatedTime: 0, // 나중에 재계산됨
@@ -628,9 +595,8 @@ class RouteManager {
   }
 
   // 경로 선 좌표 업데이트 - 단순화된 버전
-  void updateRouteSegments(int vehicleId, List<List<List<double>>> coordinates, {bool? isAM}) {
-    final currentIsAM = isAM ?? _currentIsAM;
-    final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
+  void updateRouteSegments(int vehicleId, List<List<double>> coordinates) {
+    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
 
     if (routes.isNotEmpty) {
       routes.first.coordinates = coordinates;
@@ -638,9 +604,8 @@ class RouteManager {
   }
 
   // 경로 선 좌표 가져오기 - 단순화된 버전
-  List<List<List<double>>> getRouteCoordinates(int vehicleId, {bool? isAM}) {
-    final currentIsAM = isAM ?? _currentIsAM;
-    final routes = _routes.where((route) => route.vehicleId == vehicleId && route.isAM == currentIsAM).toList();
+  List<List<double>> getRouteCoordinates(int vehicleId) {
+    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
 
     if (routes.isNotEmpty) {
       return routes.first.coordinates;
@@ -685,7 +650,7 @@ class RouteManager {
         // 새로운 객체로 업데이트 (불변성 유지)
         allRoutes[vehicleRouteIndex] = RouteInfo(
           vehicleId: route.vehicleId,
-          isAM: route.isAM,
+          vehicleName: '',
           points: route.points,
           totalDistance: totalDistance,
           estimatedTime: estimatedTime,

@@ -71,29 +71,26 @@ class SynologyController extends GetxController {
     try {
       // 경로 매니저에서 경로 정보 가져오기
       final routeData = routeManager.exportToJson();
-      await File(localRoutePath).writeAsString(jsonEncode(routeData));
+      // await File(localRoutePath).writeAsString(jsonEncode(routeData));
 
-      return true;
-      // JSON 문자열로 변환
-      // final jsonString = jsonEncode(routeData);
-
-      // // 디렉토리 확인 및 생성
-      // final directory = defaultRoutePath;
-      // if (!await api!.fileExists(directory)) {
-      //   await api!.createDirectory(directory);
-      // }
-
-      // // 항상 같은 파일에 저장
-      // if (await api!.saveFile(fixedRoutePath, jsonString)) {
-      //   print('경로 데이터 저장 성공: $fixedRoutePath');
-      //   return true;
-      // } else {
-      //   print('경로 데이터 저장 실패: $fixedRoutePath');
-      //   return false;
-      // }
-
-      // print('경로 데이터 저장 성공: $fixedRoutePath');
       // return true;
+      // JSON 문자열로 변환
+      final jsonString = jsonEncode(routeData);
+
+      // 디렉토리 확인 및 생성
+      final directory = defaultRoutePath;
+      if (!await api!.fileExists(directory)) {
+        await api!.createDirectory(directory);
+      }
+
+      // 항상 같은 파일에 저장
+      if (await api!.saveFile(fixedRoutePath, jsonString)) {
+        print('경로 데이터 저장 성공: $fixedRoutePath');
+        return true;
+      } else {
+        print('경로 데이터 저장 실패: $fixedRoutePath');
+        return false;
+      }
     } catch (e) {
       print('경로 데이터 저장 실패: $e');
       return false;
@@ -107,35 +104,23 @@ class SynologyController extends GetxController {
     }
 
     try {
-      // 임시로 로컬에서 읽어오는걸로 동작
-      // 추후 시놀로지에서 읽어오는 기능 추가 필요
+      // 파일 존재 여부 확인
+      if (!await api!.fileExists(fixedRoutePath)) {
+        print('고정 경로 파일이 존재하지 않습니다: $fixedRoutePath');
+        return false;
+      }
 
-      final localFile = File(localRoutePath);
-      final jsonString = await localFile.readAsString();
+      // 파일 내용 가져오기
+      final jsonString = await api!.getFile(fixedRoutePath);
 
       // JSON 파싱
       final Map<String, dynamic> routeData = jsonDecode(jsonString);
+
+      // 경로 매니저로 데이터 임포트
       routeManager.importFromJson(routeData);
 
+      print('경로 데이터 로드 성공: $fixedRoutePath');
       return true;
-
-      // 파일 존재 여부 확인
-      // if (!await api!.fileExists(fixedRoutePath)) {
-      //   print('고정 경로 파일이 존재하지 않습니다: $fixedRoutePath');
-      //   return false;
-      // }
-
-      // // 파일 내용 가져오기
-      // final jsonString = await api!.getFile(fixedRoutePath);
-
-      // // JSON 파싱
-      // final Map<String, dynamic> routeData = jsonDecode(jsonString);
-
-      // // 경로 매니저로 데이터 임포트
-      // routeManager.importFromJson(routeData);
-
-      // print('경로 데이터 로드 성공: $fixedRoutePath');
-      // return true;
     } catch (e) {
       print('경로 데이터 로드 실패: $e');
       return false;
