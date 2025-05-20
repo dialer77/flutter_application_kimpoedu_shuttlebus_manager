@@ -488,7 +488,7 @@ class TMapService {
           _updateRouteOrder(responseData, points, startPoint, endPoint, viaPoints, vehicleIndex);
 
           // 결과 처리 및 경로 그리기
-          await _processRouteOptimizationResult(responseData);
+          await _processRouteOptimizationResult(vehicleIndex, responseData);
 
           return responseData;
         } else {
@@ -580,110 +580,58 @@ class TMapService {
   }
 
   // 경로 최적화 결과 처리 및 지도에 표시
-  Future<void> _processRouteOptimizationResult(Map<String, dynamic> resultData) async {
-    try {
-      if (!resultData.containsKey('features')) {
-        throw Exception('유효하지 않은 경로 결과 데이터');
-      }
+  Future<void> _processRouteOptimizationResult(int vehicleId, Map<String, dynamic> responseData) async {
+    List<List<double>> allRouteSegments = [];
+    double totalDistance = 0;
+    int totalDuration = 0;
 
-      // 경로 정보 추출
-      final properties = resultData['properties'];
-      final features = resultData['features'] as List;
-
-      // 최적화된 순서대로 경로 정보 생성
-      List<List<Map<String, double>>> allCoordinates = [];
-
-      // 경로 좌표를 RouteManager에 저장하기 위한 좌표 목록 - 세그먼트별로 분리 저장
-      List<List<double>> routeManagerSegments = [];
-
-      // 경로 세그먼트 추출
-      for (var feature in features) {
-        final geometry = feature['geometry'];
-
-        if (geometry['type'] == 'LineString') {
-          final List coordinates = geometry['coordinates'];
-          List<Map<String, double>> pathCoordinates = [];
-          List<List<double>> segmentCoordinates = []; // 이 세그먼트의 좌표 목록
-
-          for (var coord in coordinates) {
-            // EPSG3857에서 WGS84로 변환 (필요한 경우)
-            if (resultData['properties']['resCoordType'] == 'EPSG3857') {
-              await _controller.executeScript('''
-                const point = new Tmapv3.Point(${coord[0]}, ${coord[1]});
-                const convertPoint = new Tmapv3.Projection.convertEPSG3857ToWGS84GEO(point);
-                console.log("변환된 좌표:", convertPoint._lat, convertPoint._lng);
-              ''');
-
-              // 여기서는 응답 좌표계를 WGS84GEO로 요청했으므로 변환 필요 없음
+    if (responseData.containsKey('features')) {
+      // 총 거리와 시간 정보 추출
+      if (responseData['features'] is List) {
+        for (var feature in responseData['features']) {
+          if (feature['geometry']?['type'] == 'LineString') {
+            // 거리와 소요시간 누적
+            if (feature['properties'] != null) {
+              if (feature['properties']['distance'] != null) {
+                final segmentDistance = double.parse(feature['properties']['distance'].toString()) / 1000; // m -> km
+                totalDistance += segmentDistance;
+              }
+              if (feature['properties']['time'] != null) {
+                final segmentTime = double.parse(feature['properties']['time'].toString()) / 60; // 초 -> 분
+                totalDuration += segmentTime.round();
+              }
             }
 
-            pathCoordinates.add({
-              'lat': coord[1].toDouble(),
-              'lng': coord[0].toDouble(),
-            });
+            // 경로 좌표 추출
+            final List coordinates = feature['geometry']['coordinates'];
 
-            // 세그먼트별로 좌표 저장 (경도, 위도 순서)
-            segmentCoordinates.add([coord[0].toDouble(), coord[1].toDouble()]);
-          }
-
-          allCoordinates.add(pathCoordinates);
-          // 이 세그먼트의 좌표를 routeManagerSegments에 추가
-          routeManagerSegments.addAll(segmentCoordinates);
-        }
-      }
-
-      // 모든 경로 세그먼트 그리기
-      for (int i = 0; i < allCoordinates.length; i++) {
-        final pathCoordinates = allCoordinates[i];
-
-        // pathCoordinates를 drawRouteList 함수에 맞는 형식으로 변환
-        List<List<double>> routeListCoordinates = pathCoordinates.map((coord) => [coord['lat'] ?? 0.0, coord['lng'] ?? 0.0]).toList();
-
-        // drawRouteList 함수 호출
-        await drawRoute(routeListCoordinates, "#dd00dd");
-      }
-
-      // RouteManager에 경로 좌표 저장 - 세그먼트별로 저장된 좌표 사용
-      if (routeManagerSegments.isNotEmpty) {
-        // 최적화 요청에 사용된 경로점에서 차량 ID 추출
-        final routeManager = Get.find<RouteManager>();
-
-        // RouteManager의 현재 활성 차량 찾기
-        int activeVehicleId = 0;
-
-        // 현재 RouteManager가 가지고 있는 경로점에서 첫 번째 점의 ID에서 차량 ID 추출
-        final routePoints = routeManager.allRoutes.isNotEmpty ? routeManager.allRoutes.first.points : [];
-
-        if (routePoints.isNotEmpty && routePoints.first.id.contains('_')) {
-          final idParts = routePoints.first.id.split('_');
-          if (idParts.length > 1) {
-            activeVehicleId = int.tryParse(idParts[1]) ?? 0;
+            for (var coord in coordinates) {
+              if (coord is List && coord.length >= 2) {
+                // TMap API는 [경도, 위도] 순서로 반환
+                double lng = coord[0].toDouble();
+                double lat = coord[1].toDouble();
+                allRouteSegments.add([lat, lng]); // [위도, 경도] 순서로 저장
+              }
+            }
           }
         }
-
-        // 차량 ID가 유효하면 경로 좌표 업데이트 - 세그먼트별로 저장된 좌표 사용
-        if (activeVehicleId > 0) {
-          // 세그먼트별로 저장된 좌표 전달
-          routeManager.updateRouteSegments(activeVehicleId, routeManagerSegments);
-          print('RouteManager에 경로 세그먼트 저장 완료: 차량 ID $activeVehicleId, 세그먼트 수: ${routeManagerSegments.length}');
-        } else {
-          print('경로 좌표를 저장할 차량 ID를 찾을 수 없습니다.');
-        }
       }
 
-      // properties에서 값 추출 후 적절한 타입으로 파싱
-      final totalDistance = double.parse((double.parse(properties['totalDistance'].toString()) / 1000).toStringAsFixed(1));
-      final totalTime = int.parse((double.parse(properties['totalTime'].toString()) / 60).toStringAsFixed(0));
-      final totalFare = int.parse(properties['totalFare'].toString());
+      // 경로 그리기
+      await drawRoute(allRouteSegments, "#dd00dd");
+    } else {
+      return;
+    }
 
-      print('경로 최적화 완료: 총 거리 ${totalDistance}km, 총 시간 $totalTime분, 총 요금 $totalFare원');
+    // RouteManager를 통해 경로 세그먼트 저장
+    if (allRouteSegments.isNotEmpty) {
+      final routeManager = Get.find<RouteManager>();
+      routeManager.updateRouteSegments(vehicleId, allRouteSegments);
 
-      // 경유지 최적화 순서 반환
-      final List<String> optimizedOrder = properties['viaPointOptimizationResult']?.map<String>((v) => v['viaPointId'].toString())?.toList() ?? [];
-      print('최적화된 경유지 순서: $optimizedOrder');
-    } catch (e) {
-      print('경로 결과 처리 오류: $e');
-      throw Exception('경로 결과 처리 실패: $e');
+      // 총 거리와 예상 시간 설정
+      routeManager.updateRouteSummary(vehicleId: vehicleId, totalDistance: double.parse(totalDistance.toStringAsFixed(1)), estimatedTime: totalDuration);
+
+      print('경로 계산 완료: 거리=${totalDistance.toStringAsFixed(1)}km, 시간=$totalDuration분, 세그먼트=${allRouteSegments.length}개');
     }
   }
 

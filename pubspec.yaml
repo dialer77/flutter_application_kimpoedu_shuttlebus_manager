@@ -52,7 +52,7 @@ msix_config:
   certificate_password: password123
   architecture: x64
   output_name: RouteManager
-  output_path: D:/build/windows/msix
+  output_path: C:\Users\smm1\OneDrive - 한밭대학교\Kmong\Navigation\ManagerProgram
   languages: ko-kr
   start_menu_icon: true
   desktop_icon: true

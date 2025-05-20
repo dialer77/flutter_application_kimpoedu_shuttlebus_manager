@@ -471,6 +471,7 @@ class _MainPageState extends State<MainPage> {
 
                                     // UI 갱신 (RouteManager가 이미 내부적으로 업데이트됨)
                                     setState(() {
+                                      _updateVehicleRouteInfo();
                                       // 경로 목록 UI 갱신
                                     });
                                   } catch (e) {
