@@ -66,7 +66,7 @@ void main() async {
     await windowManager.ensureInitialized();
     WindowManager.instance.setMinimumSize(const Size(1440, 900));
     WindowManager.instance.setSize(const Size(1440, 900));
-    WindowManager.instance.setTitle('KimpoEdu Shuttle Bus Manager');
+    WindowManager.instance.setTitle('GimpoEdu Shuttle Bus Manager');
   }
   // GetX 초기화
   await initializeGetX();
