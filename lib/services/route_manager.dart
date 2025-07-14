@@ -9,20 +9,64 @@ import '../models/route_point.dart';
 class RouteManager {
   static final RouteManager _instance = RouteManager._internal();
   factory RouteManager() => _instance;
-  RouteManager._internal();
+  RouteManager._internal() {
+    // 기본 그룹 생성
+    _routeGroups[defaultGroupName] = [];
+  }
 
-  final List<RouteInfo> _routes = [];
+  // 그룹별로 경로를 관리하는 Map 구조로 변경
+  final Map<String, List<RouteInfo>> _routeGroups = {};
   int _nextRouteId = 1;
+
+  // 기본 그룹명
+  static const String defaultGroupName = '기본 그룹';
+
+  // 현재 활성 그룹
+  String _currentGroup = defaultGroupName;
 
   // 현재 선택된 시간대 저장
   bool _currentIsAM = true;
 
-  // 모든 경로 가져오기
-  List<RouteInfo> get allRoutes => List.unmodifiable(_routes);
+  // 현재 그룹 설정/가져오기
+  String get currentGroup => _currentGroup;
+  void setCurrentGroup(String groupName) {
+    _currentGroup = groupName;
+    // 그룹이 없으면 생성
+    if (!_routeGroups.containsKey(groupName)) {
+      _routeGroups[groupName] = [];
+    }
+  }
 
-  // 특정 차량의 경로 가져오기
+  // 모든 그룹명 가져오기
+  List<String> get allGroupNames => _routeGroups.keys.toList();
+
+  // 특정 그룹의 모든 경로 가져오기
+  List<RouteInfo> getRoutesByGroup(String groupName) {
+    return List.unmodifiable(_routeGroups[groupName] ?? []);
+  }
+
+  // 현재 그룹의 모든 경로 가져오기 (기존 API 호환성)
+  List<RouteInfo> get allRoutes => getRoutesByGroup(_currentGroup);
+
+  // 전체 그룹의 모든 경로 가져오기
+  List<RouteInfo> get allRoutesFromAllGroups {
+    final allRoutes = <RouteInfo>[];
+    for (final routes in _routeGroups.values) {
+      allRoutes.addAll(routes);
+    }
+    return allRoutes;
+  }
+
+  // 특정 차량의 경로 가져오기 (현재 그룹에서)
   List<RouteInfo> getRoutesByVehicle(int vehicleId) {
-    return _routes.where((route) => route.vehicleId == vehicleId).toList();
+    final currentRoutes = _routeGroups[_currentGroup] ?? [];
+    return currentRoutes.where((route) => route.vehicleId == vehicleId).toList();
+  }
+
+  // 특정 그룹에서 특정 차량의 경로 가져오기
+  List<RouteInfo> getRoutesByVehicleInGroup(int vehicleId, String groupName) {
+    final routes = _routeGroups[groupName] ?? [];
+    return routes.where((route) => route.vehicleId == vehicleId).toList();
   }
 
   // 새 경로 추가
@@ -32,7 +76,15 @@ class RouteManager {
     required List<RoutePoint> points,
     required double totalDistance,
     required int estimatedTime,
+    String? groupName,
   }) {
+    final targetGroup = groupName ?? _currentGroup;
+
+    // 그룹이 없으면 생성
+    if (!_routeGroups.containsKey(targetGroup)) {
+      _routeGroups[targetGroup] = [];
+    }
+
     final route = RouteInfo(
       vehicleId: vehicleId,
       vehicleName: vehicleName,
@@ -41,14 +93,70 @@ class RouteManager {
       estimatedTime: estimatedTime,
     );
 
-    _routes.add(route);
+    _routeGroups[targetGroup]!.add(route);
     return route;
+  }
+
+  // 그룹 생성
+  void createGroup(String groupName) {
+    if (!_routeGroups.containsKey(groupName)) {
+      _routeGroups[groupName] = [];
+    }
+  }
+
+  // 그룹 삭제
+  bool deleteGroup(String groupName) {
+    if (groupName == defaultGroupName) {
+      return false; // 기본 그룹은 삭제 불가
+    }
+    return _routeGroups.remove(groupName) != null;
+  }
+
+  // 그룹 이름 변경
+  bool renameGroup(String oldName, String newName) {
+    if (oldName == defaultGroupName || !_routeGroups.containsKey(oldName) || _routeGroups.containsKey(newName)) {
+      return false;
+    }
+
+    final routes = _routeGroups.remove(oldName);
+    if (routes != null) {
+      _routeGroups[newName] = routes;
+
+      // 현재 그룹이 변경된 그룹이면 업데이트
+      if (_currentGroup == oldName) {
+        _currentGroup = newName;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // 경로를 다른 그룹으로 이동
+  bool moveRouteToGroup(int vehicleId, String fromGroup, String toGroup) {
+    final fromRoutes = _routeGroups[fromGroup];
+    if (fromRoutes == null) return false;
+
+    final routeIndex = fromRoutes.indexWhere((route) => route.vehicleId == vehicleId);
+    if (routeIndex == -1) return false;
+
+    // 대상 그룹이 없으면 생성
+    if (!_routeGroups.containsKey(toGroup)) {
+      _routeGroups[toGroup] = [];
+    }
+
+    final route = fromRoutes.removeAt(routeIndex);
+    _routeGroups[toGroup]!.add(route);
+
+    return true;
   }
 
   // 모든 경로 초기화
   void _clearAllRoutes() {
-    _routes.clear();
+    _routeGroups.clear();
     _nextRouteId = 1;
+    // 기본 그룹 다시 생성
+    _routeGroups[defaultGroupName] = [];
+    _currentGroup = defaultGroupName;
   }
 
   // 특정 차량 ID의 경로점 개수 가져오기 (수정)
@@ -57,13 +165,13 @@ class RouteManager {
   }
 
   String getVehicleName(int vehicleId) {
-    return _routes.where((route) => route.vehicleId == vehicleId).first.vehicleName;
+    return _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).first.vehicleName ?? '';
   }
 
   // 특정 차량 ID의 경로점 목록 가져오기 (수정)
   List<RoutePoint> getRoutePoints(int vehicleId) {
     // 해당 차량의 경로 목록 가져오기
-    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
+    final routes = _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).toList() ?? [];
 
     // 경로가 있는 경우 첫 번째 경로의 포인트 반환
     if (routes.isNotEmpty) {
@@ -76,7 +184,7 @@ class RouteManager {
   // 차량 경로에 포인트 추가 (시간대 고려하도록 수정)
   void addRoutePoint(int vehicleId, RoutePoint point, {bool? isAM, String? name}) {
     // 해당 차량 및 시간대(오전/오후)의 경로 확인
-    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
+    final routes = _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).toList() ?? [];
 
     // 경로가 없는 경우 새 경로 생성
     if (routes.isEmpty) {
@@ -184,7 +292,7 @@ class RouteManager {
 
   // 특정 인덱스의 경로점 제거 (시간대 고려)
   RoutePoint? removeRoutePoint(int vehicleId, int index) {
-    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
+    final routes = _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).toList() ?? [];
 
     if (routes.isEmpty || index < 0 || index >= routes.first.points.length) {
       return null;
@@ -379,11 +487,12 @@ class RouteManager {
     return degree * pi / 180.0;
   }
 
-  // 차량 수 확인 및 업데이트
+  // 차량 수 확인 및 업데이트 (현재 그룹 기준)
   void ensureVehicleCount(int count, String vehicleName) {
-    // 기존 차량 ID 수집
+    // 현재 그룹의 기존 차량 ID 수집
     final existingVehicleIds = <int>{};
-    for (final route in _routes) {
+    final currentRoutes = _routeGroups[_currentGroup] ?? [];
+    for (final route in currentRoutes) {
       existingVehicleIds.add(route.vehicleId);
     }
 
@@ -427,32 +536,39 @@ class RouteManager {
 
   // 모든 경로 데이터를 JSON으로 내보내기
   Map<String, dynamic> exportToJson() {
-    final routesJson = _routes
-        .map((route) => {
-              'vehicleId': route.vehicleId,
-              'vehicleName': route.vehicleName,
-              'points': route.points
-                  .map((point) => {
-                        'id': point.id,
-                        'name': point.name,
-                        'latitude': point.latitude,
-                        'longitude': point.longitude,
-                        'address': point.address,
-                        'type': point.type.toValue(),
-                        'sequence': point.sequence,
-                      })
-                  .toList(),
-              'totalDistance': route.totalDistance,
-              'estimatedTime': route.estimatedTime,
-              'isActive': route.isActive,
-              'coordinates': route.coordinates,
-            })
-        .toList();
+    // 그룹별 경로 데이터 구성
+    final groupsJson = <String, dynamic>{};
+
+    for (final groupName in _routeGroups.keys) {
+      final routes = _routeGroups[groupName]!;
+      groupsJson[groupName] = routes
+          .map((route) => {
+                'vehicleId': route.vehicleId,
+                'vehicleName': route.vehicleName,
+                'points': route.points
+                    .map((point) => {
+                          'id': point.id,
+                          'name': point.name,
+                          'latitude': point.latitude,
+                          'longitude': point.longitude,
+                          'address': point.address,
+                          'type': point.type.toValue(),
+                          'sequence': point.sequence,
+                        })
+                    .toList(),
+                'totalDistance': route.totalDistance,
+                'estimatedTime': route.estimatedTime,
+                'isActive': route.isActive,
+                'coordinates': route.coordinates,
+              })
+          .toList();
+    }
 
     return {
-      'routes': routesJson,
+      'routeGroups': groupsJson, // 새로운 그룹 구조
+      'currentGroup': _currentGroup,
       'nextRouteId': _nextRouteId,
-      'version': '1.0', // 버전 정보 추가
+      'version': '2.0', // 그룹 지원 버전
       'timestamp': DateTime.now().toIso8601String(),
     };
   }
@@ -467,65 +583,123 @@ class RouteManager {
       _nextRouteId = json['nextRouteId'];
     }
 
-    // 경로 데이터 로드
-    if (json.containsKey('routes')) {
-      final routesJson = json['routes'] as List;
+    // 버전 확인 (기존 파일 호환성)
+    final version = json['version'] ?? '1.0';
+
+    if (version == '2.0' && json.containsKey('routeGroups')) {
+      // 새로운 그룹 구조 로드 (버전 2.0)
+      _importGroupedRoutes(json);
+    } else if (json.containsKey('routes')) {
+      // 기존 단일 리스트 구조 로드 (버전 1.0 호환성)
+      _importLegacyRoutes(json);
+    }
+
+    // 현재 그룹 설정
+    if (json.containsKey('currentGroup')) {
+      final currentGroup = json['currentGroup'] as String;
+      if (_routeGroups.containsKey(currentGroup)) {
+        _currentGroup = currentGroup;
+      }
+    }
+
+    // 기본 그룹이 없으면 생성
+    if (!_routeGroups.containsKey(defaultGroupName)) {
+      _routeGroups[defaultGroupName] = [];
+    }
+  }
+
+  // 그룹 구조 경로 데이터 로드 (버전 2.0)
+  void _importGroupedRoutes(Map<String, dynamic> json) {
+    final routeGroupsJson = json['routeGroups'] as Map<String, dynamic>;
+
+    for (final groupName in routeGroupsJson.keys) {
+      final routesJson = routeGroupsJson[groupName] as List;
+      final routes = <RouteInfo>[];
 
       for (var routeJson in routesJson) {
-        final List<RoutePoint> points = [];
-
-        // 포인트 데이터 로드
-        if (routeJson.containsKey('points')) {
-          final pointsJson = routeJson['points'] as List;
-
-          for (var pointJson in pointsJson) {
-            points.add(RoutePoint(
-              id: pointJson['id'],
-              name: pointJson['name'],
-              latitude: pointJson['latitude'],
-              longitude: pointJson['longitude'],
-              address: pointJson['address'],
-              type: PointTypeExtension.fromValue(pointJson['type']),
-              sequence: pointJson['sequence'] ?? 0,
-            ));
-          }
+        final route = _parseRouteFromJson(routeJson);
+        if (route != null) {
+          routes.add(route);
         }
-
-        // 경로 좌표 로드
-        List<List<double>> coordinates = [];
-        if (routeJson.containsKey('coordinates')) {
-          final coordsJson = routeJson['coordinates'] as List;
-          for (var coord in coordsJson) {
-            if (coord is List) {
-              coordinates.add(coord.map<double>((e) => e is num ? e.toDouble() : 0.0).toList());
-            }
-          }
-        }
-
-        // 경로 추가
-        final route = RouteInfo(
-          vehicleId: routeJson['vehicleId'],
-          vehicleName: routeJson['vehicleName'],
-          points: points,
-          totalDistance: routeJson['totalDistance'],
-          estimatedTime: routeJson['estimatedTime'],
-          isActive: routeJson['isActive'] ?? true,
-          coordinates: coordinates,
-        );
-
-        _routes.add(route);
       }
+
+      _routeGroups[groupName] = routes;
+    }
+  }
+
+  // 기존 단일 리스트 구조 경로 데이터 로드 (버전 1.0 호환성)
+  void _importLegacyRoutes(Map<String, dynamic> json) {
+    final routesJson = json['routes'] as List;
+    final routes = <RouteInfo>[];
+
+    for (var routeJson in routesJson) {
+      final route = _parseRouteFromJson(routeJson);
+      if (route != null) {
+        routes.add(route);
+      }
+    }
+
+    // 기본 그룹에 모든 경로 추가
+    _routeGroups[defaultGroupName] = routes;
+  }
+
+  // JSON에서 RouteInfo 객체 생성 (공통 파싱 로직)
+  RouteInfo? _parseRouteFromJson(Map<String, dynamic> routeJson) {
+    try {
+      final List<RoutePoint> points = [];
+
+      // 포인트 데이터 로드
+      if (routeJson.containsKey('points')) {
+        final pointsJson = routeJson['points'] as List;
+
+        for (var pointJson in pointsJson) {
+          points.add(RoutePoint(
+            id: pointJson['id'],
+            name: pointJson['name'],
+            latitude: pointJson['latitude'],
+            longitude: pointJson['longitude'],
+            address: pointJson['address'],
+            type: PointTypeExtension.fromValue(pointJson['type']),
+            sequence: pointJson['sequence'] ?? 0,
+          ));
+        }
+      }
+
+      // 경로 좌표 로드
+      List<List<double>> coordinates = [];
+      if (routeJson.containsKey('coordinates')) {
+        final coordsJson = routeJson['coordinates'] as List;
+        for (var coord in coordsJson) {
+          if (coord is List) {
+            coordinates.add(coord.map<double>((e) => e is num ? e.toDouble() : 0.0).toList());
+          }
+        }
+      }
+
+      // 경로 생성
+      return RouteInfo(
+        vehicleId: routeJson['vehicleId'],
+        vehicleName: routeJson['vehicleName'],
+        points: points,
+        totalDistance: routeJson['totalDistance'],
+        estimatedTime: routeJson['estimatedTime'],
+        isActive: routeJson['isActive'] ?? true,
+        coordinates: coordinates,
+      );
+    } catch (e) {
+      print('경로 파싱 오류: $e');
+      return null;
     }
   }
 
   // 특정 차량 ID의 모든 경로 제거
   void removeVehicle(int vehicleId) {
-    _routes.removeWhere((route) => route.vehicleId == vehicleId);
+    _routeGroups[_currentGroup]?.removeWhere((route) => route.vehicleId == vehicleId);
   }
 
   // 현재 시간대(오전/오후)에 맞는 경로 가져오기
   RouteInfo? getCurrentRoute(int vehicleId) {
-    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
+    final routes = _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).toList() ?? [];
 
     return routes.isNotEmpty ? routes.first : null;
   }
@@ -544,7 +718,7 @@ class RouteManager {
     final targetVehicleId = vehicleId ?? (newPoints.isNotEmpty ? int.tryParse(newPoints.first.id.split('_')[1]) ?? 0 : 0);
 
     // 해당 차량의 경로 찾기
-    final routes = _routes.where((route) => route.vehicleId == targetVehicleId).toList();
+    final routes = _routeGroups[_currentGroup]?.where((route) => route.vehicleId == targetVehicleId).toList() ?? [];
 
     if (routes.isEmpty) {
       // 해당 경로가 없으면 새로 생성
@@ -558,7 +732,10 @@ class RouteManager {
         );
 
         // 경로 정보 재계산
-        _recalculateRouteInfo(_routes.last);
+        final currentRoutes = _routeGroups[_currentGroup];
+        if (currentRoutes != null && currentRoutes.isNotEmpty) {
+          _recalculateRouteInfo(currentRoutes.last);
+        }
 
         // 시작점과 끝점 타입 업데이트
         _updateRouteEndpoints(targetVehicleId);
@@ -596,7 +773,7 @@ class RouteManager {
 
   // 경로 선 좌표 업데이트 - 단순화된 버전
   void updateRouteSegments(int vehicleId, List<List<double>> coordinates) {
-    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
+    final routes = _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).toList() ?? [];
 
     if (routes.isNotEmpty) {
       routes.first.coordinates = coordinates;
@@ -605,7 +782,7 @@ class RouteManager {
 
   // 경로 선 좌표 가져오기 - 단순화된 버전
   List<List<double>> getRouteCoordinates(int vehicleId) {
-    final routes = _routes.where((route) => route.vehicleId == vehicleId).toList();
+    final routes = _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).toList() ?? [];
 
     if (routes.isNotEmpty) {
       return routes.first.coordinates;
@@ -640,22 +817,33 @@ class RouteManager {
   /// 경로 요약 정보(총 거리, 예상 시간) 업데이트
   void updateRouteSummary({required int vehicleId, required double totalDistance, required int estimatedTime}) {
     try {
-      // 해당 차량의 경로 객체 찾기
-      final vehicleRouteIndex = allRoutes.indexWhere((route) => route.vehicleId == vehicleId);
+      // 해당 차량의 경로를 모든 그룹에서 찾기
+      RouteInfo? targetRoute;
+      String? targetGroupName;
+      int? targetIndex;
 
-      if (vehicleRouteIndex != -1) {
+      for (final groupName in _routeGroups.keys) {
+        final routes = _routeGroups[groupName]!;
+        final routeIndex = routes.indexWhere((route) => route.vehicleId == vehicleId);
+
+        if (routeIndex != -1) {
+          targetRoute = routes[routeIndex];
+          targetGroupName = groupName;
+          targetIndex = routeIndex;
+          break;
+        }
+      }
+
+      if (targetRoute != null && targetGroupName != null && targetIndex != null) {
         // 경로가 존재하면 업데이트
-        final route = allRoutes[vehicleRouteIndex];
-
-        // 새로운 객체로 업데이트 (불변성 유지)
-        allRoutes[vehicleRouteIndex] = RouteInfo(
-          vehicleId: route.vehicleId,
-          vehicleName: '',
-          points: route.points,
+        _routeGroups[targetGroupName]![targetIndex] = RouteInfo(
+          vehicleId: targetRoute.vehicleId,
+          vehicleName: targetRoute.vehicleName,
+          points: targetRoute.points,
           totalDistance: totalDistance,
           estimatedTime: estimatedTime,
-          isActive: route.isActive,
-          coordinates: route.coordinates,
+          isActive: targetRoute.isActive,
+          coordinates: targetRoute.coordinates,
         );
 
         print('경로 요약 정보 업데이트: 차량 $vehicleId, 거리: $totalDistance km, 소요시간: $estimatedTime 분');

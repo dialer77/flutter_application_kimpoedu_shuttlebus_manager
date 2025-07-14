@@ -11,6 +11,7 @@ import 'package:webview_windows/webview_windows.dart';
 import '../services/route_manager.dart';
 import '../services/tmap/t_map_service.dart';
 import '../controllers/synology_controller.dart';
+import '../widgets/grouped_route_panel.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -261,146 +262,42 @@ class _MainPageState extends State<MainPage> {
                       ],
                     ),
 
-                    // 차량 호차 수 설정 부분을 추가/제거 버튼으로 교체
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            // 차량 추가 다이얼로그 표시
-                            _showAddVehicleDialog();
-                          },
-                          icon: const Icon(Icons.add),
-                          label: const Text('차량 추가'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: vehicleCount > 0
-                              ? () {
-                                  setState(() {
-                                    // 현재 차량 수 확인
-                                    final currentCount = vehicleCount;
-
-                                    if (currentCount > 0) {
-                                      int index = _routeManager.allRoutes.indexOf(_routeManager.getRoutesByVehicle(_selectedVehicleId).first);
-
-                                      if (index == vehicleCount - 1) {
-                                        index--;
-                                      }
-                                      // 선택된 차량 제거
-                                      _routeManager.removeVehicle(_selectedVehicleId);
-
-                                      _selectedVehicleId = index < 0 ? 0 : _routeManager.allRoutes[index].vehicleId;
-
-                                      // 선택된 차량의 경로 마커 및 경로선 제거
-                                      _tMapService.clearMap();
-
-                                      // UI 업데이트
-                                      if (_routeManager.allRoutes.isNotEmpty) {
-                                        _updateVehicleRouteInfo();
-                                      }
-                                    }
-                                  });
-                                }
-                              : null, // 차량이 1대만 있으면 비활성화
-                          icon: const Icon(Icons.remove),
-                          label: const Text('차량 제거'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-
                     const SizedBox(height: 16),
-                    // 호차 선택 버튼들
+
+                    // 그룹별 경로 관리 패널
                     Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: ListView.builder(
-                          itemCount: vehicleCount,
-                          itemBuilder: (context, index) {
-                            final routeInfo = _routeManager.allRoutes[index];
-                            final isSelected = _selectedVehicleId == routeInfo.vehicleId;
+                      child: GroupedRoutePanel(
+                        routeManager: _routeManager,
+                        selectedVehicleId: _selectedVehicleId,
+                        onVehicleSelected: (vehicleId) {
+                          setState(() {
+                            _selectedVehicleId = vehicleId;
 
-                            return Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _selectedVehicleId = routeInfo.vehicleId;
+                            // 선택된 차량의 시작 지점 확인
+                            final routes = _routeManager.getRoutesByVehicle(vehicleId);
+                            if (routes.isNotEmpty) {
+                              final startPoint = _routeManager.getStartPoint(vehicleId);
 
-                                    // 선택된 차량의 시작 지점 확인
-                                    final startPoint = _routeManager.getStartPoint(index);
+                              // 시작 지점이 있으면 지도를 해당 위치로 이동
+                              if (startPoint != null) {
+                                _tMapService.moveToLocation(startPoint.latitude, startPoint.longitude, 14);
+                              }
 
-                                    // 시작 지점이 있으면 지도를 해당 위치로 이동
-                                    if (startPoint != null) {
-                                      _tMapService.moveToLocation(startPoint.latitude, startPoint.longitude, 14 // 줌 레벨
-                                          );
-                                    }
-
-                                    // 선택된 차량의 경로 포인트 표시 업데이트
-                                    _updateVehicleRouteInfo();
-                                    if (_routeManager.getRoutesByVehicle(_selectedVehicleId).first.points.isNotEmpty) {
-                                      _selectedRoute = _routeManager.getRoutesByVehicle(_selectedVehicleId).first.startPoint;
-                                    } else {
-                                      _selectedRoute = null;
-                                    }
-                                  });
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: isSelected ? Colors.blue : Colors.grey[300],
-                                  foregroundColor: isSelected ? Colors.white : Colors.black,
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  minimumSize: const Size(double.infinity, 48), // 전체 너비 사용
-                                ),
-                                child: Row(
-                                  children: [
-                                    // 차량 아이콘
-                                    Icon(
-                                      Icons.directions_bus,
-                                      color: isSelected ? Colors.white : Colors.grey[600],
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    // 차량 이름
-                                    Expanded(
-                                      child: Text(
-                                        routeInfo.vehicleName,
-                                        style: TextStyle(
-                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                        ),
-                                      ),
-                                    ),
-                                    // 경로 포인트 개수 표시
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: isSelected ? Colors.white.withOpacity(0.2) : Colors.grey[400],
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        '${_routeManager.getRoutePointCount(routeInfo.vehicleId)}개',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: isSelected ? Colors.white : Colors.grey[700],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                              // 선택된 차량의 경로 포인트 표시 업데이트
+                              _updateVehicleRouteInfo();
+                              if (routes.first.points.isNotEmpty) {
+                                _selectedRoute = routes.first.startPoint;
+                              } else {
+                                _selectedRoute = null;
+                              }
+                            }
+                          });
+                        },
+                        onRouteUpdated: () {
+                          setState(() {
+                            _updateVehicleRouteInfo();
+                          });
+                        },
                       ),
                     ),
                   ],
@@ -1420,89 +1317,5 @@ class _MainPageState extends State<MainPage> {
         },
       ),
     );
-  }
-
-  // 차량 추가 다이얼로그 표시
-  void _showAddVehicleDialog() {
-    final TextEditingController nameController = TextEditingController();
-    final FocusNode focusNode = FocusNode();
-    bool isProcessing = false; // 중복 처리 방지
-
-    // 차량 추가 처리 함수
-    void processVehicleAdd() {
-      if (isProcessing) return; // 이미 처리 중이면 중복 실행 방지
-      isProcessing = true;
-
-      final String vehicleName = nameController.text.trim();
-
-      // 현재 차량 수 확인
-      final currentCount = vehicleCount;
-
-      // 최대 10대까지만 추가 가능
-      if (currentCount < 10) {
-        try {
-          // RouteManager를 통해 새 차량 추가 (이름 포함)
-          _routeManager.ensureVehicleCount(currentCount + 1, vehicleName);
-
-          setState(() {
-            // 새로 추가된 차량으로 자동 선택
-            _selectedVehicleId = _routeManager.allRoutes.last.vehicleId;
-
-            // UI 업데이트
-            _updateVehicleRouteInfo();
-          });
-        } catch (e) {
-          print('차량 추가 오류: $e');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('차량 추가 중 오류가 발생했습니다: $e')),
-          );
-        }
-      } else {
-        // 최대 차량 수 초과 알림
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('최대 10대까지만 추가할 수 있습니다')),
-        );
-      }
-
-      Navigator.of(context).pop();
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('차량 추가'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              focusNode: focusNode,
-              decoration: const InputDecoration(
-                labelText: '차량 이름',
-                hintText: '예: 1호차 오전, 2호차 오후, 3호차 오전 등',
-                border: OutlineInputBorder(),
-              ),
-              autofocus: true,
-              // 편집 완료 시 호출됨 (엔터 키 누를 때)
-              onEditingComplete: processVehicleAdd,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: processVehicleAdd,
-            child: const Text('추가'),
-          ),
-        ],
-      ),
-    ).then((_) {
-      // 다이얼로그가 닫힐 때 컨트롤러와 포커스 노드 해제
-      nameController.dispose();
-      focusNode.dispose();
-    });
   }
 }
