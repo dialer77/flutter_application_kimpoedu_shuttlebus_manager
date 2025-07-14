@@ -39,6 +39,10 @@ class _MainPageState extends State<MainPage> {
   // StreamSubscription 필드 추가
   StreamSubscription? _messageSubscription;
 
+  // 패널 접기/펼치기 상태 관리 변수 추가
+  bool _isLeftPanelExpanded = true;
+  bool _isMiddlePanelExpanded = true;
+
   @override
   void initState() {
     super.initState();
@@ -210,197 +214,434 @@ class _MainPageState extends State<MainPage> {
     return Scaffold(
       body: Row(
         children: [
-          // 좌측 설정 패널
-          Expanded(
-            flex: 3,
-            child: Container(
-              padding: const EdgeInsets.all(16.0),
+          // 좌측 설정 패널 또는 접힌 탭
+          if (_isLeftPanelExpanded)
+            Expanded(
+              flex: 3,
+              child: Container(
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.5),
+                      spreadRadius: 1,
+                      blurRadius: 7,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 헤더 부분 (제목 + 토글 버튼)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '경로 설정',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.chevron_left,
+                            size: 24,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isLeftPanelExpanded = !_isLeftPanelExpanded;
+                            });
+                          },
+                          tooltip: '패널 접기',
+                        ),
+                      ],
+                    ),
+
+                    // 차량 호차 수 설정 부분을 추가/제거 버튼으로 교체
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            // 차량 추가 다이얼로그 표시
+                            _showAddVehicleDialog();
+                          },
+                          icon: const Icon(Icons.add),
+                          label: const Text('차량 추가'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: vehicleCount > 0
+                              ? () {
+                                  setState(() {
+                                    // 현재 차량 수 확인
+                                    final currentCount = vehicleCount;
+
+                                    if (currentCount > 0) {
+                                      int index = _routeManager.allRoutes.indexOf(_routeManager.getRoutesByVehicle(_selectedVehicleId).first);
+
+                                      if (index == vehicleCount - 1) {
+                                        index--;
+                                      }
+                                      // 선택된 차량 제거
+                                      _routeManager.removeVehicle(_selectedVehicleId);
+
+                                      _selectedVehicleId = index < 0 ? 0 : _routeManager.allRoutes[index].vehicleId;
+
+                                      // 선택된 차량의 경로 마커 및 경로선 제거
+                                      _tMapService.clearMap();
+
+                                      // UI 업데이트
+                                      if (_routeManager.allRoutes.isNotEmpty) {
+                                        _updateVehicleRouteInfo();
+                                      }
+                                    }
+                                  });
+                                }
+                              : null, // 차량이 1대만 있으면 비활성화
+                          icon: const Icon(Icons.remove),
+                          label: const Text('차량 제거'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+                    // 호차 선택 버튼들
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListView.builder(
+                          itemCount: vehicleCount,
+                          itemBuilder: (context, index) {
+                            final routeInfo = _routeManager.allRoutes[index];
+                            final isSelected = _selectedVehicleId == routeInfo.vehicleId;
+
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _selectedVehicleId = routeInfo.vehicleId;
+
+                                    // 선택된 차량의 시작 지점 확인
+                                    final startPoint = _routeManager.getStartPoint(index);
+
+                                    // 시작 지점이 있으면 지도를 해당 위치로 이동
+                                    if (startPoint != null) {
+                                      _tMapService.moveToLocation(startPoint.latitude, startPoint.longitude, 14 // 줌 레벨
+                                          );
+                                    }
+
+                                    // 선택된 차량의 경로 포인트 표시 업데이트
+                                    _updateVehicleRouteInfo();
+                                    if (_routeManager.getRoutesByVehicle(_selectedVehicleId).first.points.isNotEmpty) {
+                                      _selectedRoute = _routeManager.getRoutesByVehicle(_selectedVehicleId).first.startPoint;
+                                    } else {
+                                      _selectedRoute = null;
+                                    }
+                                  });
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isSelected ? Colors.blue : Colors.grey[300],
+                                  foregroundColor: isSelected ? Colors.white : Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  minimumSize: const Size(double.infinity, 48), // 전체 너비 사용
+                                ),
+                                child: Row(
+                                  children: [
+                                    // 차량 아이콘
+                                    Icon(
+                                      Icons.directions_bus,
+                                      color: isSelected ? Colors.white : Colors.grey[600],
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // 차량 이름
+                                    Expanded(
+                                      child: Text(
+                                        routeInfo.vehicleName,
+                                        style: TextStyle(
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ),
+                                    // 경로 포인트 개수 표시
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isSelected ? Colors.white.withOpacity(0.2) : Colors.grey[400],
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        '${_routeManager.getRoutePointCount(routeInfo.vehicleId)}개',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: isSelected ? Colors.white : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            // 접힌 좌측 패널 탭
+            Container(
+              width: 50,
               decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.5),
-                    spreadRadius: 1,
-                    blurRadius: 7,
+                color: Colors.blue.shade50,
+                border: Border(
+                  right: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chevron_right,
+                      size: 24,
+                      color: Colors.blue,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isLeftPanelExpanded = true;
+                      });
+                    },
+                    tooltip: '경로 설정 패널 펼치기',
+                  ),
+                  const SizedBox(height: 8),
+                  RotatedBox(
+                    quarterTurns: 3,
+                    child: Text(
+                      '경로설정',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const Text(
-                    '경로 설정',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+            ),
+
+          // 중간 차량 경로 리스트 관리 패널 또는 접힌 탭
+          if (_isMiddlePanelExpanded)
+            Expanded(
+              flex: 3,
+              child: Container(
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.3),
+                      spreadRadius: 1,
+                      blurRadius: 5,
                     ),
-                  ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 헤더 부분 (제목 + 토글 버튼)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // 경로 제목과 개수 정보
+                        Expanded(
+                          child: Text(
+                            _routeManager.allRoutes.isNotEmpty ? '${_routeManager.getVehicleName(_selectedVehicleId)} 경로 (${_routeManager.getRoutePointCount(_selectedVehicleId)}개 지점)' : '경로 정보가 없습니다',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.chevron_left,
+                            size: 24,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isMiddlePanelExpanded = !_isMiddlePanelExpanded;
+                            });
+                          },
+                          tooltip: '패널 접기',
+                        ),
+                      ],
+                    ),
 
-                  // 차량 호차 수 설정 부분을 추가/제거 버튼으로 교체
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          // 차량 추가 다이얼로그 표시
-                          _showAddVehicleDialog();
+                    const SizedBox(height: 16),
+
+                    // 시작 지점 표시 (있는 경우)
+                    _buildSingleRoutePoint(_routeManager.getStartPoint(_selectedVehicleId), true),
+
+                    // 경로 목록 (스크롤 가능) - 경유지만 표시
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        key: ValueKey('route_list_${_routeManager.getRoutePoints(_selectedVehicleId).map((p) => p.id).join('_')}'),
+                        shrinkWrap: true,
+                        // 필터링해서 경유지만 카운트
+                        itemCount: _routeManager.getRoutePoints(_selectedVehicleId).where((point) => point.type == PointType.waypoint).length,
+                        itemBuilder: (context, idx) {
+                          // 경유지만 필터링해서 가져오기 (매번 새로 가져와서 최신 상태 유지)
+                          final waypointsOnly = _routeManager.getRoutePoints(_selectedVehicleId).where((point) => point.type == PointType.waypoint).toList();
+                          final routePoint = waypointsOnly[idx];
+                          return _buildDraggableRoutePointTile(
+                              routePoint,
+                              // 원래 인덱스 찾기
+                              _routeManager.getRoutePoints(_selectedVehicleId).indexOf(routePoint));
                         },
-                        icon: const Icon(Icons.add),
-                        label: const Text('차량 추가'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: vehicleCount > 0
-                            ? () {
-                                setState(() {
-                                  // 현재 차량 수 확인
-                                  final currentCount = vehicleCount;
-
-                                  if (currentCount > 0) {
-                                    int index = _routeManager.allRoutes.indexOf(_routeManager.getRoutesByVehicle(_selectedVehicleId).first);
-
-                                    if (index == vehicleCount - 1) {
-                                      index--;
-                                    }
-                                    // 선택된 차량 제거
-                                    _routeManager.removeVehicle(_selectedVehicleId);
-
-                                    _selectedVehicleId = index < 0 ? 0 : _routeManager.allRoutes[index].vehicleId;
-
-                                    // 선택된 차량의 경로 마커 및 경로선 제거
-                                    _tMapService.clearMap();
-
-                                    // UI 업데이트
-                                    if (_routeManager.allRoutes.isNotEmpty) {
-                                      _updateVehicleRouteInfo();
-                                    }
-                                  }
-                                });
-                              }
-                            : null, // 차량이 1대만 있으면 비활성화
-                        icon: const Icon(Icons.remove),
-                        label: const Text('차량 제거'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-                  // 호차 선택 버튼들
-                  Wrap(
-                    spacing: 15,
-                    runSpacing: 4,
-                    children: List.generate(
-                      vehicleCount, // vehicleCount getter 사용
-                      (index) => ElevatedButton(
-                        onPressed: () {
+                        onReorder: (oldIndex, newIndex) {
                           setState(() {
-                            final routeInfo = _routeManager.allRoutes[index];
-                            _selectedVehicleId = routeInfo.vehicleId;
+                            // 경유지만 필터링한 리스트
+                            final waypointsOnly = _routeManager.getRoutePoints(_selectedVehicleId).where((point) => point.type == PointType.waypoint).toList();
 
-                            // 선택된 차량의 시작 지점 확인
-                            final startPoint = _routeManager.getStartPoint(index);
+                            // 실제 전체 리스트에서의 인덱스 계산
+                            final oldRealIndex = _routeManager.getRoutePoints(_selectedVehicleId).indexOf(waypointsOnly[oldIndex]);
 
-                            // 시작 지점이 있으면 지도를 해당 위치로 이동
-                            if (startPoint != null) {
-                              _tMapService.moveToLocation(startPoint.latitude, startPoint.longitude, 14 // 줌 레벨
-                                  );
-                            }
+                            // newIndex가 이동 후 위치를 나타내므로 조정 필요
+                            if (newIndex > oldIndex) newIndex--;
 
-                            // 선택된 차량의 경로 포인트 표시 업데이트
+                            final newRealIndex = _routeManager.getRoutePoints(_selectedVehicleId).indexOf(waypointsOnly[newIndex]);
+
+                            // RouteManager를 통해 경로점 순서 변경
+                            _routeManager.reorderRoutePoint(_selectedVehicleId, oldRealIndex, newRealIndex);
+
+                            // 경로선 업데이트
                             _updateVehicleRouteInfo();
-                            if (_routeManager.getRoutesByVehicle(_selectedVehicleId).first.points.isNotEmpty) {
-                              _selectedRoute = _routeManager.getRoutesByVehicle(_selectedVehicleId).first.startPoint;
-                            } else {
-                              _selectedRoute = null;
-                            }
                           });
                         },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _selectedVehicleId == _routeManager.allRoutes[index].vehicleId ? Colors.blue : Colors.grey[300],
-                          foregroundColor: _selectedVehicleId == _routeManager.allRoutes[index].vehicleId ? Colors.white : Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        ),
-                        child: Text(_routeManager.allRoutes[index].vehicleName),
                       ),
                     ),
-                  ),
 
-                  // 경로 저장 버튼 위치 변경: 날짜/시간 선택과 최적화 버튼 추가
-                  const Divider(),
+                    // 종료 지점 표시 (있는 경우) - 경유지 아래에 배치
+                    _buildSingleRoutePoint(_routeManager.getEndPoint(_selectedVehicleId), false),
 
-                  // 날짜/시간 선택과 최적화 버튼을 함께 배치
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 날짜/시간 선택 행 (출발 일시 텍스트 제거)
-                        Row(
+                    // 경로 정보 요약 (거리/시간)
+                    if (_routeManager.getRoutesByVehicle(_selectedVehicleId).isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
                           children: [
-                            // 날짜 선택 버튼
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                icon: const Icon(Icons.calendar_today, size: 18),
-                                label: Text(
-                                  '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                onPressed: () async {
-                                  final pickedDate = await showDatePicker(
-                                    context: context,
-                                    initialDate: _selectedDate,
-                                    firstDate: DateTime.now(),
-                                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                                  );
-                                  if (pickedDate != null) {
-                                    setState(() {
-                                      _selectedDate = pickedDate;
-                                    });
-                                  }
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                                ),
-                              ),
+                            const Icon(Icons.route, color: Colors.blue, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '총 거리: ${_routeManager.getRoutesByVehicle(_selectedVehicleId).first.totalDistance.toStringAsFixed(1)}km',
+                              style: const TextStyle(fontSize: 12),
                             ),
                             const SizedBox(width: 8),
-                            // 시간 선택 버튼
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                icon: const Icon(Icons.access_time, size: 18),
-                                label: Text(
-                                  '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                onPressed: () async {
-                                  final pickedTime = await showTimePicker(
-                                    context: context,
-                                    initialTime: _selectedTime,
-                                  );
-                                  if (pickedTime != null) {
-                                    setState(() {
-                                      _selectedTime = pickedTime;
-                                    });
-                                  }
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                            Text(
+                              '예상 시간: ${_routeManager.getRoutesByVehicle(_selectedVehicleId).first.estimatedTime}분',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const Divider(),
+
+                    // 날짜/시간 선택과 최적화 버튼을 함께 배치
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '출발 일시',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          // 날짜/시간 선택 행
+                          Row(
+                            children: [
+                              // 날짜 선택 버튼
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.calendar_today, size: 18),
+                                  label: Text(
+                                    '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  onPressed: () async {
+                                    final pickedDate = await showDatePicker(
+                                      context: context,
+                                      initialDate: _selectedDate,
+                                      firstDate: DateTime.now(),
+                                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                                    );
+                                    if (pickedDate != null) {
+                                      setState(() {
+                                        _selectedDate = pickedDate;
+                                      });
+                                    }
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            // 현재 시간으로 설정 버튼 (이동됨)
-                            OutlinedButton.icon(
+                              const SizedBox(width: 8),
+                              // 시간 선택 버튼
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.access_time, size: 18),
+                                  label: Text(
+                                    '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  onPressed: () async {
+                                    final pickedTime = await showTimePicker(
+                                      context: context,
+                                      initialTime: _selectedTime,
+                                    );
+                                    if (pickedTime != null) {
+                                      setState(() {
+                                        _selectedTime = pickedTime;
+                                      });
+                                    }
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 8),
+                          // 현재 시간으로 설정 버튼
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
                               icon: const Icon(Icons.update, size: 16),
-                              label: const Text('현재 시간', style: TextStyle(fontSize: 12)),
+                              label: const Text('현재 시간으로 설정', style: TextStyle(fontSize: 12)),
                               onPressed: () {
                                 setState(() {
                                   _selectedDate = DateTime.now();
@@ -411,309 +652,249 @@ class _MainPageState extends State<MainPage> {
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                               ),
                             ),
-                          ],
-                        ),
+                          ),
 
-                        const SizedBox(height: 8),
-                        // 경로 최적화 버튼과 일반 경로 버튼을 한 줄에 배치 (현재 시간 버튼 제거됨)
-                        Row(
-                          children: [
-                            // 경로 최적화 버튼
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                icon: const Icon(Icons.route),
-                                label: const Text('경로 최적화'),
-                                onPressed: () async {
-                                  try {
-                                    // 로딩 표시
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('경로 최적화 중...'),
-                                        duration: Duration(seconds: 1),
-                                      ),
-                                    );
-
-                                    // 경로 최적화 실행 (비동기 대기)
-                                    final routePoints = _routeManager.getRoutePoints(_selectedVehicleId);
-                                    if (routePoints.length < 2) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('최소 출발지와 도착지가 필요합니다'),
-                                          backgroundColor: Colors.orange,
-                                        ),
-                                      );
-                                      return;
-                                    }
-
-                                    // 출발 일시 설정 (선택된 날짜와 시간 조합)
-                                    final departureDateTime = DateTime(
-                                      _selectedDate.year,
-                                      _selectedDate.month,
-                                      _selectedDate.day,
-                                      _selectedTime.hour,
-                                      _selectedTime.minute,
-                                    );
-
-                                    // 최적화 요청 시 출발 일시 전달
-                                    await _tMapService.optimizeRoute(
-                                      routePoints,
-                                      _selectedVehicleId,
-                                      departureDateTime, // 출발 일시 전달
-                                    );
-
-                                    // 성공 메시지 표시
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('경로 최적화 완료'),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-
-                                    // UI 갱신 (RouteManager가 이미 내부적으로 업데이트됨)
-                                    setState(() {
-                                      _updateVehicleRouteInfo();
-                                      // 경로 목록 UI 갱신
-                                    });
-                                  } catch (e) {
-                                    // 오류 메시지 표시
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('경로 최적화 실패: $e'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            // 일반 경로 버튼 추가
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                icon: const Icon(Icons.alt_route),
-                                label: const Text('일반 경로'),
-                                onPressed: () async {
-                                  try {
-                                    // 로딩 표시
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('일반 경로 계산 중...'),
-                                        duration: Duration(seconds: 1),
-                                      ),
-                                    );
-
-                                    // 일반 경로 계산 실행
-                                    final routePoints = _routeManager.getRoutePoints(_selectedVehicleId);
-                                    if (routePoints.length < 2) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('최소 출발지와 도착지가 필요합니다'),
-                                          backgroundColor: Colors.orange,
-                                        ),
-                                      );
-                                      return;
-                                    }
-
-                                    // 출발 일시 설정 (선택된 날짜와 시간 조합)
-                                    final departureDateTime = DateTime(
-                                      _selectedDate.year,
-                                      _selectedDate.month,
-                                      _selectedDate.day,
-                                      _selectedTime.hour,
-                                      _selectedTime.minute,
-                                    );
-
-                                    // 일반 경로 요청 시 출발 일시 전달
-                                    await _tMapService.calculateNormalRoute(
-                                      routePoints,
-                                      _selectedVehicleId,
-                                      departureDateTime, // 출발 일시 전달
-                                    );
-
-                                    // 성공 메시지 표시
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('일반 경로 계산 완료'),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-
-                                    // UI 갱신
-                                    setState(() {
-                                      // 경로 목록 UI 갱신
-                                    });
-                                  } catch (e) {
-                                    // 오류 메시지 표시
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('일반 경로 계산 실패: $e'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.deepPurple,
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // 선택된 호차 경로 정보 표시
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.only(top: 16),
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                          const SizedBox(height: 12),
+                          // 경로 최적화 버튼과 일반 경로 버튼을 한 줄에 배치
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              // 경로 제목과 개수 정보
+                              // 경로 최적화 버튼
                               Expanded(
-                                child: Text(
-                                  _routeManager.allRoutes.isNotEmpty
-                                      ? '${_routeManager.getVehicleName(_selectedVehicleId)} 경로 (${_routeManager.getRoutePointCount(_selectedVehicleId)}개 지점)'
-                                      : '경로 정보가 없습니다',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                child: ElevatedButton.icon(
+                                  icon: const Icon(Icons.route),
+                                  label: const Text('경로 최적화'),
+                                  onPressed: () async {
+                                    try {
+                                      // 로딩 표시
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('경로 최적화 중...'),
+                                          duration: Duration(seconds: 1),
+                                        ),
+                                      );
+
+                                      // 경로 최적화 실행 (비동기 대기)
+                                      final routePoints = _routeManager.getRoutePoints(_selectedVehicleId);
+                                      if (routePoints.length < 2) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('최소 출발지와 도착지가 필요합니다'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      // 출발 일시 설정 (선택된 날짜와 시간 조합)
+                                      final departureDateTime = DateTime(
+                                        _selectedDate.year,
+                                        _selectedDate.month,
+                                        _selectedDate.day,
+                                        _selectedTime.hour,
+                                        _selectedTime.minute,
+                                      );
+
+                                      // 최적화 요청 시 출발 일시 전달
+                                      await _tMapService.optimizeRoute(
+                                        routePoints,
+                                        _selectedVehicleId,
+                                        departureDateTime, // 출발 일시 전달
+                                      );
+
+                                      // 성공 메시지 표시
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('경로 최적화 완료'),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+
+                                      // UI 갱신 (RouteManager가 이미 내부적으로 업데이트됨)
+                                      setState(() {
+                                        _updateVehicleRouteInfo();
+                                        // 경로 목록 UI 갱신
+                                      });
+                                    } catch (e) {
+                                      // 오류 메시지 표시
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('경로 최적화 실패: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // 일반 경로 버튼 추가
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  icon: const Icon(Icons.alt_route),
+                                  label: const Text('일반 경로'),
+                                  onPressed: () async {
+                                    try {
+                                      // 로딩 표시
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('일반 경로 계산 중...'),
+                                          duration: Duration(seconds: 1),
+                                        ),
+                                      );
+
+                                      // 일반 경로 계산 실행
+                                      final routePoints = _routeManager.getRoutePoints(_selectedVehicleId);
+                                      if (routePoints.length < 2) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('최소 출발지와 도착지가 필요합니다'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      // 출발 일시 설정 (선택된 날짜와 시간 조합)
+                                      final departureDateTime = DateTime(
+                                        _selectedDate.year,
+                                        _selectedDate.month,
+                                        _selectedDate.day,
+                                        _selectedTime.hour,
+                                        _selectedTime.minute,
+                                      );
+
+                                      // 일반 경로 요청 시 출발 일시 전달
+                                      await _tMapService.calculateNormalRoute(
+                                        routePoints,
+                                        _selectedVehicleId,
+                                        departureDateTime, // 출발 일시 전달
+                                      );
+
+                                      // 성공 메시지 표시
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('일반 경로 계산 완료'),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+
+                                      // UI 갱신
+                                      setState(() {
+                                        // 경로 목록 UI 갱신
+                                      });
+                                    } catch (e) {
+                                      // 오류 메시지 표시
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('일반 경로 계산 실패: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.deepPurple,
+                                    foregroundColor: Colors.white,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
 
-                          // 시작 지점 표시 (있는 경우)
-                          _buildSingleRoutePoint(_routeManager.getStartPoint(_selectedVehicleId), true),
+                          const SizedBox(height: 12),
+                          // 경로 저장 버튼
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                // 경로 저장 처리
+                                final synologyController = Get.find<SynologyController>();
 
-                          // 경로 목록 (스크롤 가능) - 경유지만 표시
-                          Expanded(
-                            child: ReorderableListView.builder(
-                              key: ValueKey('route_list_${_routeManager.getRoutePoints(_selectedVehicleId).map((p) => p.id).join('_')}'),
-                              shrinkWrap: true,
-                              // 필터링해서 경유지만 카운트
-                              itemCount: _routeManager.getRoutePoints(_selectedVehicleId).where((point) => point.type == PointType.waypoint).length,
-                              itemBuilder: (context, idx) {
-                                // 경유지만 필터링해서 가져오기 (매번 새로 가져와서 최신 상태 유지)
-                                final waypointsOnly = _routeManager.getRoutePoints(_selectedVehicleId).where((point) => point.type == PointType.waypoint).toList();
-                                final routePoint = waypointsOnly[idx];
-                                return _buildDraggableRoutePointTile(
-                                    routePoint,
-                                    // 원래 인덱스 찾기
-                                    _routeManager.getRoutePoints(_selectedVehicleId).indexOf(routePoint));
+                                if (!synologyController.isConnected.value) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('NAS 연결이 필요합니다. 설정에서 먼저 연결해주세요.')));
+                                  return;
+                                }
+
+                                // 저장 진행 (고정 파일명 사용)
+                                final success = await synologyController.saveRouteData(_routeManager);
+
+                                if (success) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                    content: Text('경로 정보가 성공적으로 저장되었습니다'),
+                                    duration: Duration(seconds: 2),
+                                  ));
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                    content: Text('경로 정보 저장 중 오류가 발생했습니다'),
+                                    backgroundColor: Colors.red,
+                                  ));
+                                }
                               },
-                              onReorder: (oldIndex, newIndex) {
-                                setState(() {
-                                  // 경유지만 필터링한 리스트
-                                  final waypointsOnly = _routeManager.getRoutePoints(_selectedVehicleId).where((point) => point.type == PointType.waypoint).toList();
-
-                                  // 실제 전체 리스트에서의 인덱스 계산
-                                  final oldRealIndex = _routeManager.getRoutePoints(_selectedVehicleId).indexOf(waypointsOnly[oldIndex]);
-
-                                  // newIndex가 이동 후 위치를 나타내므로 조정 필요
-                                  if (newIndex > oldIndex) newIndex--;
-
-                                  final newRealIndex = _routeManager.getRoutePoints(_selectedVehicleId).indexOf(waypointsOnly[newIndex]);
-
-                                  // RouteManager를 통해 경로점 순서 변경
-                                  _routeManager.reorderRoutePoint(_selectedVehicleId, oldRealIndex, newRealIndex);
-
-                                  // 경로선 업데이트
-                                  _updateVehicleRouteInfo();
-                                });
-                              },
-                            ),
-                          ),
-
-                          // 종료 지점 표시 (있는 경우) - 경유지 아래에 배치
-                          _buildSingleRoutePoint(_routeManager.getEndPoint(_selectedVehicleId), false),
-
-                          // 경로 정보 요약 (거리/시간)
-                          if (_routeManager.getRoutesByVehicle(_selectedVehicleId).isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.route, color: Colors.blue, size: 16),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '총 거리: ${_routeManager.getRoutesByVehicle(_selectedVehicleId).first.totalDistance.toStringAsFixed(1)}km',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '예상 시간: ${_routeManager.getRoutesByVehicle(_selectedVehicleId).first.estimatedTime}분',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ],
+                              icon: const Icon(Icons.save),
+                              label: const Text('경로 저장'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                               ),
                             ),
+                          ),
                         ],
                       ),
                     ),
+                  ],
+                ),
+              ),
+            )
+          else
+            // 접힌 중간 패널 탭
+            Container(
+              width: 50,
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                border: Border(
+                  right: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chevron_right,
+                      size: 24,
+                      color: Colors.green,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isMiddlePanelExpanded = true;
+                      });
+                    },
+                    tooltip: '경로 세부내역 패널 펼치기',
                   ),
-
-                  // 경로 저장 버튼을 맨 아래로 이동
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        // 경로 저장 처리
-                        final synologyController = Get.find<SynologyController>();
-
-                        if (!synologyController.isConnected.value) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('NAS 연결이 필요합니다. 설정에서 먼저 연결해주세요.')));
-                          return;
-                        }
-
-                        // 저장 진행 (고정 파일명 사용)
-                        final success = await synologyController.saveRouteData(_routeManager);
-
-                        if (success) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                            content: Text('경로 정보가 성공적으로 저장되었습니다'),
-                            duration: Duration(seconds: 2),
-                          ));
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                            content: Text('경로 정보 저장 중 오류가 발생했습니다'),
-                            backgroundColor: Colors.red,
-                          ));
-                        }
-                      },
-                      icon: const Icon(Icons.save),
-                      label: const Text('경로 저장'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  const SizedBox(height: 8),
+                  RotatedBox(
+                    quarterTurns: 3,
+                    child: Text(
+                      '경로내역',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-
-                  // 추가 설정 항목
                 ],
               ),
             ),
-          ),
 
           // 우측 지도 패널
           Expanded(
-            flex: 7,
+            flex: 5,
             child: Column(
               children: [
                 // 검색창
@@ -828,7 +1009,7 @@ class _MainPageState extends State<MainPage> {
                 Expanded(
                   child: Stack(
                     children: [
-                      // 기졸 WebView 코드
+                      // 기존 WebView 코드
                       Container(
                         color: Colors.grey[200],
                         child: _isMapInitialized ? Webview(_tMapService.controller) : const Center(child: CircularProgressIndicator()),
