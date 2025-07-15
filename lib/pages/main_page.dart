@@ -1066,8 +1066,11 @@ class _MainPageState extends State<MainPage> {
         _tMapService.addMarker(endPoints[i], i);
       }
 
-      final routeInfo = _routeManager.getRoutesByVehicle(vehicleId).first;
-      _tMapService.drawRoute(routeInfo.coordinates, '#dd00dd');
+      final routes = _routeManager.getRoutesByVehicle(vehicleId);
+      if (routes.isNotEmpty) {
+        final routeInfo = routes.first;
+        _tMapService.drawRoute(routeInfo.coordinates, '#dd00dd');
+      }
     });
   }
 

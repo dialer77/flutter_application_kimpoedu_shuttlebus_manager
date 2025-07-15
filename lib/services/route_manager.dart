@@ -150,6 +150,18 @@ class RouteManager {
     return true;
   }
 
+  // 그룹 내에서 차량 순서 변경
+  bool reorderVehicleInGroup(String groupName, int oldIndex, int newIndex) {
+    final routes = _routeGroups[groupName];
+    if (routes == null || oldIndex < 0 || newIndex < 0 || oldIndex >= routes.length || newIndex >= routes.length) {
+      return false;
+    }
+
+    final route = routes.removeAt(oldIndex);
+    routes.insert(newIndex, route);
+    return true;
+  }
+
   // 모든 경로 초기화
   void _clearAllRoutes() {
     _routeGroups.clear();
@@ -165,7 +177,21 @@ class RouteManager {
   }
 
   String getVehicleName(int vehicleId) {
-    return _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).first.vehicleName ?? '';
+    // 현재 그룹에서 먼저 찾기
+    final currentRoutes = _routeGroups[_currentGroup]?.where((route) => route.vehicleId == vehicleId).toList() ?? [];
+    if (currentRoutes.isNotEmpty) {
+      return currentRoutes.first.vehicleName;
+    }
+
+    // 현재 그룹에 없으면 모든 그룹에서 찾기
+    for (final routes in _routeGroups.values) {
+      final foundRoute = routes.where((route) => route.vehicleId == vehicleId).toList();
+      if (foundRoute.isNotEmpty) {
+        return foundRoute.first.vehicleName;
+      }
+    }
+
+    return '';
   }
 
   // 특정 차량 ID의 경로점 목록 가져오기 (수정)
